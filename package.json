@@ -1,0 +1,27 @@
+{
+  "name": "memory-sql-workspace",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/core",
+    "examples",
+    "tests"
+  ],
+  "scripts": {
+    "build": "npm run build -w packages/core",
+    "typecheck": "npm run build -w packages/core && npm run typecheck --workspaces --if-present",
+    "test": "npm run build && npm run test -w tests",
+    "fetch-fhir": "tsx scripts/fetch-fhir.ts",
+    "example:01": "npm run build && tsx examples/src/01-cq-dual-oracle.ts",
+    "example:02": "npm run build && tsx examples/src/02-simulation.ts",
+    "example:03": "npm run build && tsx examples/src/03-custom-answer-path.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}

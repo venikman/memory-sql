@@ -1,0 +1,37 @@
+{
+  "name": "memory-sql",
+  "version": "0.1.0",
+  "description": "Ontology-backed SQL memory layer with built-in validation: FHIR-derived ontology over DuckDB, CQ dual-oracle and simulation engines.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "memory-sql": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "fhir-data"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "^1.5.4-r.1",
+    "@effect/cli": "^0.75.2",
+    "@effect/platform": "^0.96.2",
+    "@effect/platform-node": "^0.107.0",
+    "effect": "^3.21.4",
+    "fast-check": "^4.8.0"
+  }
+}

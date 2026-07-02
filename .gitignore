@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+
+# local artifacts (CLI --out worlds, scratch runs)
+/tmp/
+world.json

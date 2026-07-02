@@ -1,0 +1,5766 @@
+{
+ "meta": {
+  "source": "https://hl7.org/fhir/R4/profiles-resources.json + https://hl7.org/fhir/R4/valuesets.json",
+  "fhirVersion": "4.0.1",
+  "generatedBy": "scripts/fetch-fhir.ts",
+  "pruning": [
+   "depth-1 elements only, plus whitelisted backbone leaves (Claim/EOB insurance.coverage, EOB/ClaimResponse payment.amount, Appointment.participant.actor, Provenance.agent.who)",
+   "infra fields dropped (id, meta, implicitRules, language, text, contained, extension, modifierExtension); max=0 dropped",
+   "CodeableConcept/Coding->code; Period->_start/_end; Money->_cents/_currency; Quantity->_value/_unit; Identifier->_value; HumanName->_family/_given; Address->_city/_state; other complex types pruned",
+   "choice [x]: Reference(Medication) wins; value[x] prefers Quantity; else fixed preference order (see scripts/fetch-fhir.ts)",
+   "repeating elements = first repetition; required = min>=1",
+   "required bindings expanded to <=25 codes via ValueSet.compose + CodeSystem, else omitted",
+   "Reference targets intersected with top-50; Reference(Any) -> Patient|Encounter|Observation; empty target lists pruned",
+   "max 18 attributes per resource (required kept first); names lower_snake_case"
+  ]
+ },
+ "resources": [
+  {
+   "name": "Patient",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "active",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "name_family",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "name_given",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "gender",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "male",
+      "female",
+      "other",
+      "unknown"
+     ]
+    },
+    {
+     "name": "birth_date",
+     "type": "date",
+     "required": false
+    },
+    {
+     "name": "deceased",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "address_city",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "address_state",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "marital_status",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "multiple_birth",
+     "type": "boolean",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "general_practitioner",
+     "target": [
+      "Organization",
+      "Practitioner",
+      "PractitionerRole"
+     ],
+     "required": false
+    },
+    {
+     "name": "managing_organization",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Practitioner",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "active",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "name_family",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "name_given",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "address_city",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "address_state",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "gender",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "male",
+      "female",
+      "other",
+      "unknown"
+     ]
+    },
+    {
+     "name": "birth_date",
+     "type": "date",
+     "required": false
+    },
+    {
+     "name": "communication",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": []
+  },
+  {
+   "name": "PractitionerRole",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "active",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "period_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "specialty",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "availability_exceptions",
+     "type": "string",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "practitioner",
+     "target": [
+      "Practitioner"
+     ],
+     "required": false
+    },
+    {
+     "name": "organization",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "location",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "healthcare_service",
+     "target": [
+      "HealthcareService"
+     ],
+     "required": false
+    },
+    {
+     "name": "endpoint",
+     "target": [
+      "Endpoint"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Organization",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "active",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "name",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "alias",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "address_city",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "address_state",
+     "type": "string",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "part_of",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "endpoint",
+     "target": [
+      "Endpoint"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Location",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "active",
+      "suspended",
+      "inactive"
+     ]
+    },
+    {
+     "name": "operational_status",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "name",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "alias",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "description",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "mode",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "instance",
+      "kind"
+     ]
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "address_city",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "address_state",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "physical_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "availability_exceptions",
+     "type": "string",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "managing_organization",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "part_of",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "endpoint",
+     "target": [
+      "Endpoint"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Encounter",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "planned",
+      "arrived",
+      "triaged",
+      "in-progress",
+      "onleave",
+      "finished",
+      "cancelled",
+      "entered-in-error",
+      "unknown"
+     ]
+    },
+    {
+     "name": "class",
+     "type": "code",
+     "required": true
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "service_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "priority",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "period_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "length_value",
+     "type": "decimal",
+     "required": false
+    },
+    {
+     "name": "length_unit",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "reason_code",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group"
+     ],
+     "required": false
+    },
+    {
+     "name": "based_on",
+     "target": [
+      "ServiceRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "appointment",
+     "target": [
+      "Appointment"
+     ],
+     "required": false
+    },
+    {
+     "name": "reason_reference",
+     "target": [
+      "Condition",
+      "Procedure",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "account",
+     "target": [
+      "Account"
+     ],
+     "required": false
+    },
+    {
+     "name": "service_provider",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "part_of",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Observation",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "registered",
+      "preliminary",
+      "final",
+      "amended",
+      "corrected",
+      "cancelled",
+      "entered-in-error",
+      "unknown"
+     ]
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "code",
+     "type": "code",
+     "required": true
+    },
+    {
+     "name": "effective",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "issued",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "value_value",
+     "type": "decimal",
+     "required": false
+    },
+    {
+     "name": "value_unit",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "data_absent_reason",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "interpretation",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "body_site",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "method",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "based_on",
+     "target": [
+      "CarePlan",
+      "MedicationRequest",
+      "ServiceRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "part_of",
+     "target": [
+      "MedicationDispense",
+      "MedicationStatement",
+      "Procedure",
+      "Immunization",
+      "ImagingStudy"
+     ],
+     "required": false
+    },
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group",
+      "Device",
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "focus",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "performer",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization",
+      "CareTeam",
+      "Patient",
+      "RelatedPerson"
+     ],
+     "required": false
+    },
+    {
+     "name": "specimen",
+     "target": [
+      "Specimen"
+     ],
+     "required": false
+    },
+    {
+     "name": "device",
+     "target": [
+      "Device"
+     ],
+     "required": false
+    },
+    {
+     "name": "has_member",
+     "target": [
+      "Observation",
+      "QuestionnaireResponse"
+     ],
+     "required": false
+    },
+    {
+     "name": "derived_from",
+     "target": [
+      "DocumentReference",
+      "ImagingStudy",
+      "QuestionnaireResponse",
+      "Observation"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Condition",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "clinical_status",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "active",
+      "recurrence",
+      "relapse",
+      "inactive",
+      "remission",
+      "resolved"
+     ]
+    },
+    {
+     "name": "verification_status",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "unconfirmed",
+      "provisional",
+      "differential",
+      "confirmed",
+      "refuted",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "severity",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "body_site",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "onset",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "abatement",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "recorded_date",
+     "type": "datetime",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group"
+     ],
+     "required": true
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "recorder",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Patient",
+      "RelatedPerson"
+     ],
+     "required": false
+    },
+    {
+     "name": "asserter",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Patient",
+      "RelatedPerson"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Procedure",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "instantiates_canonical",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "instantiates_uri",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "preparation",
+      "in-progress",
+      "not-done",
+      "on-hold",
+      "stopped",
+      "completed",
+      "entered-in-error",
+      "unknown"
+     ]
+    },
+    {
+     "name": "status_reason",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "performed",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "reason_code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "body_site",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "outcome",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "complication",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "follow_up",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "used_code",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "based_on",
+     "target": [
+      "CarePlan",
+      "ServiceRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "part_of",
+     "target": [
+      "Procedure",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group"
+     ],
+     "required": true
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "recorder",
+     "target": [
+      "Patient",
+      "RelatedPerson",
+      "Practitioner",
+      "PractitionerRole"
+     ],
+     "required": false
+    },
+    {
+     "name": "asserter",
+     "target": [
+      "Patient",
+      "RelatedPerson",
+      "Practitioner",
+      "PractitionerRole"
+     ],
+     "required": false
+    },
+    {
+     "name": "location",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "reason_reference",
+     "target": [
+      "Condition",
+      "Observation",
+      "Procedure",
+      "DiagnosticReport",
+      "DocumentReference"
+     ],
+     "required": false
+    },
+    {
+     "name": "report",
+     "target": [
+      "DiagnosticReport",
+      "DocumentReference"
+     ],
+     "required": false
+    },
+    {
+     "name": "complication_detail",
+     "target": [
+      "Condition"
+     ],
+     "required": false
+    },
+    {
+     "name": "used_reference",
+     "target": [
+      "Device",
+      "Medication"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "MedicationRequest",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "active",
+      "on-hold",
+      "cancelled",
+      "completed",
+      "entered-in-error",
+      "stopped",
+      "draft",
+      "unknown"
+     ]
+    },
+    {
+     "name": "status_reason",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "intent",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "proposal",
+      "plan",
+      "order",
+      "original-order",
+      "reflex-order",
+      "filler-order",
+      "instance-order",
+      "option"
+     ]
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "priority",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "routine",
+      "urgent",
+      "asap",
+      "stat"
+     ]
+    },
+    {
+     "name": "do_not_perform",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "reported",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "authored_on",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "performer_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "reason_code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "instantiates_canonical",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "instantiates_uri",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "group_identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "course_of_therapy_type",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "medication",
+     "target": [
+      "Medication"
+     ],
+     "required": true
+    },
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group"
+     ],
+     "required": true
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "supporting_information",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "requester",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization",
+      "Patient",
+      "RelatedPerson",
+      "Device"
+     ],
+     "required": false
+    },
+    {
+     "name": "performer",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization",
+      "Patient",
+      "Device",
+      "RelatedPerson",
+      "CareTeam"
+     ],
+     "required": false
+    },
+    {
+     "name": "recorder",
+     "target": [
+      "Practitioner",
+      "PractitionerRole"
+     ],
+     "required": false
+    },
+    {
+     "name": "reason_reference",
+     "target": [
+      "Condition",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "based_on",
+     "target": [
+      "CarePlan",
+      "MedicationRequest",
+      "ServiceRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "insurance",
+     "target": [
+      "Coverage",
+      "ClaimResponse"
+     ],
+     "required": false
+    },
+    {
+     "name": "prior_prescription",
+     "target": [
+      "MedicationRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "event_history",
+     "target": [
+      "Provenance"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Medication",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "active",
+      "inactive",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "form",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "manufacturer",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "MedicationDispense",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "preparation",
+      "in-progress",
+      "cancelled",
+      "on-hold",
+      "completed",
+      "entered-in-error",
+      "stopped",
+      "declined",
+      "unknown"
+     ]
+    },
+    {
+     "name": "status_reason",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "quantity_value",
+     "type": "decimal",
+     "required": false
+    },
+    {
+     "name": "quantity_unit",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "days_supply_value",
+     "type": "decimal",
+     "required": false
+    },
+    {
+     "name": "days_supply_unit",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "when_prepared",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "when_handed_over",
+     "type": "datetime",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "part_of",
+     "target": [
+      "Procedure"
+     ],
+     "required": false
+    },
+    {
+     "name": "medication",
+     "target": [
+      "Medication"
+     ],
+     "required": true
+    },
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group"
+     ],
+     "required": false
+    },
+    {
+     "name": "context",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "supporting_information",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "location",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "authorizing_prescription",
+     "target": [
+      "MedicationRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "destination",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "receiver",
+     "target": [
+      "Patient",
+      "Practitioner"
+     ],
+     "required": false
+    },
+    {
+     "name": "event_history",
+     "target": [
+      "Provenance"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "MedicationStatement",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "active",
+      "completed",
+      "entered-in-error",
+      "intended",
+      "stopped",
+      "on-hold",
+      "unknown",
+      "not-taken"
+     ]
+    },
+    {
+     "name": "status_reason",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "effective",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "date_asserted",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "reason_code",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "based_on",
+     "target": [
+      "MedicationRequest",
+      "CarePlan",
+      "ServiceRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "part_of",
+     "target": [
+      "MedicationDispense",
+      "MedicationStatement",
+      "Procedure",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "medication",
+     "target": [
+      "Medication"
+     ],
+     "required": true
+    },
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group"
+     ],
+     "required": true
+    },
+    {
+     "name": "context",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "information_source",
+     "target": [
+      "Patient",
+      "Practitioner",
+      "PractitionerRole",
+      "RelatedPerson",
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "derived_from",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "reason_reference",
+     "target": [
+      "Condition",
+      "Observation",
+      "DiagnosticReport"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Immunization",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "completed",
+      "entered-in-error",
+      "not-done"
+     ]
+    },
+    {
+     "name": "status_reason",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "vaccine_code",
+     "type": "code",
+     "required": true
+    },
+    {
+     "name": "occurrence",
+     "type": "datetime",
+     "required": true
+    },
+    {
+     "name": "recorded",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "primary_source",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "report_origin",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "lot_number",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "expiration_date",
+     "type": "date",
+     "required": false
+    },
+    {
+     "name": "site",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "route",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "dose_quantity_value",
+     "type": "decimal",
+     "required": false
+    },
+    {
+     "name": "dose_quantity_unit",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "reason_code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "is_subpotent",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "subpotent_reason",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "program_eligibility",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "patient",
+     "target": [
+      "Patient"
+     ],
+     "required": true
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "location",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "manufacturer",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "reason_reference",
+     "target": [
+      "Condition",
+      "Observation",
+      "DiagnosticReport"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "AllergyIntolerance",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "clinical_status",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "active",
+      "inactive",
+      "resolved"
+     ]
+    },
+    {
+     "name": "verification_status",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "unconfirmed",
+      "confirmed",
+      "refuted",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "allergy",
+      "intolerance"
+     ]
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "food",
+      "medication",
+      "environment",
+      "biologic"
+     ]
+    },
+    {
+     "name": "criticality",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "low",
+      "high",
+      "unable-to-assess"
+     ]
+    },
+    {
+     "name": "code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "onset",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "recorded_date",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "last_occurrence",
+     "type": "datetime",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "patient",
+     "target": [
+      "Patient"
+     ],
+     "required": true
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "recorder",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Patient",
+      "RelatedPerson"
+     ],
+     "required": false
+    },
+    {
+     "name": "asserter",
+     "target": [
+      "Patient",
+      "RelatedPerson",
+      "Practitioner",
+      "PractitionerRole"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "DiagnosticReport",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "registered",
+      "partial",
+      "preliminary",
+      "final",
+      "amended",
+      "corrected",
+      "appended",
+      "cancelled",
+      "entered-in-error",
+      "unknown"
+     ]
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "code",
+     "type": "code",
+     "required": true
+    },
+    {
+     "name": "effective",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "issued",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "conclusion",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "conclusion_code",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "based_on",
+     "target": [
+      "CarePlan",
+      "MedicationRequest",
+      "ServiceRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group",
+      "Device",
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "performer",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization",
+      "CareTeam"
+     ],
+     "required": false
+    },
+    {
+     "name": "results_interpreter",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization",
+      "CareTeam"
+     ],
+     "required": false
+    },
+    {
+     "name": "specimen",
+     "target": [
+      "Specimen"
+     ],
+     "required": false
+    },
+    {
+     "name": "result",
+     "target": [
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "imaging_study",
+     "target": [
+      "ImagingStudy"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "DocumentReference",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "master_identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "current",
+      "superseded",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "doc_status",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "preliminary",
+      "final",
+      "amended",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "date",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "description",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "security_label",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Practitioner",
+      "Group",
+      "Device"
+     ],
+     "required": false
+    },
+    {
+     "name": "author",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization",
+      "Device",
+      "Patient",
+      "RelatedPerson"
+     ],
+     "required": false
+    },
+    {
+     "name": "authenticator",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "custodian",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "ServiceRequest",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "instantiates_canonical",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "instantiates_uri",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "requisition_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "draft",
+      "active",
+      "on-hold",
+      "revoked",
+      "completed",
+      "entered-in-error",
+      "unknown"
+     ]
+    },
+    {
+     "name": "intent",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "proposal",
+      "plan",
+      "directive",
+      "order",
+      "original-order",
+      "reflex-order",
+      "filler-order",
+      "instance-order",
+      "option"
+     ]
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "priority",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "routine",
+      "urgent",
+      "asap",
+      "stat"
+     ]
+    },
+    {
+     "name": "do_not_perform",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "order_detail",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "quantity_value",
+     "type": "decimal",
+     "required": false
+    },
+    {
+     "name": "quantity_unit",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "occurrence",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "as_needed",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "authored_on",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "performer_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "location_code",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "based_on",
+     "target": [
+      "CarePlan",
+      "ServiceRequest",
+      "MedicationRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "replaces",
+     "target": [
+      "ServiceRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group",
+      "Location",
+      "Device"
+     ],
+     "required": true
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "requester",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization",
+      "Patient",
+      "RelatedPerson",
+      "Device"
+     ],
+     "required": false
+    },
+    {
+     "name": "performer",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization",
+      "CareTeam",
+      "HealthcareService",
+      "Patient",
+      "Device",
+      "RelatedPerson"
+     ],
+     "required": false
+    },
+    {
+     "name": "location_reference",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "reason_reference",
+     "target": [
+      "Condition",
+      "Observation",
+      "DiagnosticReport",
+      "DocumentReference"
+     ],
+     "required": false
+    },
+    {
+     "name": "insurance",
+     "target": [
+      "Coverage",
+      "ClaimResponse"
+     ],
+     "required": false
+    },
+    {
+     "name": "supporting_info",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "specimen",
+     "target": [
+      "Specimen"
+     ],
+     "required": false
+    },
+    {
+     "name": "relevant_history",
+     "target": [
+      "Provenance"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "CarePlan",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "instantiates_canonical",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "instantiates_uri",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "draft",
+      "active",
+      "on-hold",
+      "revoked",
+      "completed",
+      "entered-in-error",
+      "unknown"
+     ]
+    },
+    {
+     "name": "intent",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "proposal",
+      "plan",
+      "order",
+      "option"
+     ]
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "title",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "description",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "period_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "created",
+     "type": "datetime",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "based_on",
+     "target": [
+      "CarePlan"
+     ],
+     "required": false
+    },
+    {
+     "name": "replaces",
+     "target": [
+      "CarePlan"
+     ],
+     "required": false
+    },
+    {
+     "name": "part_of",
+     "target": [
+      "CarePlan"
+     ],
+     "required": false
+    },
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group"
+     ],
+     "required": true
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "author",
+     "target": [
+      "Patient",
+      "Practitioner",
+      "PractitionerRole",
+      "Device",
+      "RelatedPerson",
+      "Organization",
+      "CareTeam"
+     ],
+     "required": false
+    },
+    {
+     "name": "contributor",
+     "target": [
+      "Patient",
+      "Practitioner",
+      "PractitionerRole",
+      "Device",
+      "RelatedPerson",
+      "Organization",
+      "CareTeam"
+     ],
+     "required": false
+    },
+    {
+     "name": "care_team",
+     "target": [
+      "CareTeam"
+     ],
+     "required": false
+    },
+    {
+     "name": "addresses",
+     "target": [
+      "Condition"
+     ],
+     "required": false
+    },
+    {
+     "name": "supporting_info",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "goal",
+     "target": [
+      "Goal"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "CareTeam",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "proposed",
+      "active",
+      "suspended",
+      "inactive",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "name",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "period_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "reason_code",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group"
+     ],
+     "required": false
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "reason_reference",
+     "target": [
+      "Condition"
+     ],
+     "required": false
+    },
+    {
+     "name": "managing_organization",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Goal",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "lifecycle_status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "proposed",
+      "planned",
+      "accepted",
+      "active",
+      "on-hold",
+      "completed",
+      "cancelled",
+      "entered-in-error",
+      "rejected"
+     ]
+    },
+    {
+     "name": "achievement_status",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "priority",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "description",
+     "type": "code",
+     "required": true
+    },
+    {
+     "name": "start",
+     "type": "date",
+     "required": false
+    },
+    {
+     "name": "status_date",
+     "type": "date",
+     "required": false
+    },
+    {
+     "name": "status_reason",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "outcome_code",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group",
+      "Organization"
+     ],
+     "required": true
+    },
+    {
+     "name": "expressed_by",
+     "target": [
+      "Patient",
+      "Practitioner",
+      "PractitionerRole",
+      "RelatedPerson"
+     ],
+     "required": false
+    },
+    {
+     "name": "addresses",
+     "target": [
+      "Condition",
+      "Observation",
+      "MedicationStatement",
+      "ServiceRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "outcome_reference",
+     "target": [
+      "Observation"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Device",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "active",
+      "inactive",
+      "entered-in-error",
+      "unknown"
+     ]
+    },
+    {
+     "name": "status_reason",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "distinct_identifier",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "manufacturer",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "manufacture_date",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "expiration_date",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "lot_number",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "serial_number",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "model_number",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "part_number",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "url",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "safety",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "patient",
+     "target": [
+      "Patient"
+     ],
+     "required": false
+    },
+    {
+     "name": "owner",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "location",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "parent",
+     "target": [
+      "Device"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Specimen",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "accession_identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "available",
+      "unavailable",
+      "unsatisfactory",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "received_time",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "condition",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group",
+      "Device",
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "parent",
+     "target": [
+      "Specimen"
+     ],
+     "required": false
+    },
+    {
+     "name": "request",
+     "target": [
+      "ServiceRequest"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "ImagingStudy",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "registered",
+      "available",
+      "cancelled",
+      "entered-in-error",
+      "unknown"
+     ]
+    },
+    {
+     "name": "modality",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "started",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "number_of_series",
+     "type": "integer",
+     "required": false
+    },
+    {
+     "name": "number_of_instances",
+     "type": "integer",
+     "required": false
+    },
+    {
+     "name": "procedure_code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "reason_code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "description",
+     "type": "string",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Device",
+      "Group"
+     ],
+     "required": true
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "based_on",
+     "target": [
+      "CarePlan",
+      "ServiceRequest",
+      "Appointment",
+      "Task"
+     ],
+     "required": false
+    },
+    {
+     "name": "referrer",
+     "target": [
+      "Practitioner",
+      "PractitionerRole"
+     ],
+     "required": false
+    },
+    {
+     "name": "interpreter",
+     "target": [
+      "Practitioner",
+      "PractitionerRole"
+     ],
+     "required": false
+    },
+    {
+     "name": "endpoint",
+     "target": [
+      "Endpoint"
+     ],
+     "required": false
+    },
+    {
+     "name": "procedure_reference",
+     "target": [
+      "Procedure"
+     ],
+     "required": false
+    },
+    {
+     "name": "location",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "reason_reference",
+     "target": [
+      "Condition",
+      "Observation",
+      "DiagnosticReport",
+      "DocumentReference"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Appointment",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "proposed",
+      "pending",
+      "booked",
+      "arrived",
+      "fulfilled",
+      "cancelled",
+      "noshow",
+      "entered-in-error",
+      "checked-in",
+      "waitlist"
+     ]
+    },
+    {
+     "name": "cancelation_reason",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "service_category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "service_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "specialty",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "appointment_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "reason_code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "priority",
+     "type": "integer",
+     "required": false
+    },
+    {
+     "name": "description",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "minutes_duration",
+     "type": "integer",
+     "required": false
+    },
+    {
+     "name": "created",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "comment",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "patient_instruction",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "requested_period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "requested_period_end",
+     "type": "datetime",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "reason_reference",
+     "target": [
+      "Condition",
+      "Procedure",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "supporting_information",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "slot",
+     "target": [
+      "Slot"
+     ],
+     "required": false
+    },
+    {
+     "name": "based_on",
+     "target": [
+      "ServiceRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "participant_actor",
+     "target": [
+      "Patient",
+      "Practitioner",
+      "PractitionerRole",
+      "RelatedPerson",
+      "Device",
+      "HealthcareService",
+      "Location"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Schedule",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "active",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "service_category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "service_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "specialty",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "planning_horizon_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "planning_horizon_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "comment",
+     "type": "string",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "actor",
+     "target": [
+      "Patient",
+      "Practitioner",
+      "PractitionerRole",
+      "RelatedPerson",
+      "Device",
+      "HealthcareService",
+      "Location"
+     ],
+     "required": true
+    }
+   ]
+  },
+  {
+   "name": "Slot",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "service_category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "service_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "specialty",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "appointment_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "busy",
+      "free",
+      "busy-unavailable",
+      "busy-tentative",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "start",
+     "type": "datetime",
+     "required": true
+    },
+    {
+     "name": "end",
+     "type": "datetime",
+     "required": true
+    },
+    {
+     "name": "overbooked",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "comment",
+     "type": "string",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "schedule",
+     "target": [
+      "Schedule"
+     ],
+     "required": true
+    }
+   ]
+  },
+  {
+   "name": "Coverage",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "active",
+      "cancelled",
+      "draft",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "subscriber_id",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "dependent",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "relationship",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "period_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "order",
+     "type": "integer",
+     "required": false
+    },
+    {
+     "name": "network",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "subrogation",
+     "type": "boolean",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "policy_holder",
+     "target": [
+      "Patient",
+      "RelatedPerson",
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "subscriber",
+     "target": [
+      "Patient",
+      "RelatedPerson"
+     ],
+     "required": false
+    },
+    {
+     "name": "beneficiary",
+     "target": [
+      "Patient"
+     ],
+     "required": true
+    },
+    {
+     "name": "payor",
+     "target": [
+      "Organization",
+      "Patient",
+      "RelatedPerson"
+     ],
+     "required": true
+    }
+   ]
+  },
+  {
+   "name": "Claim",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "active",
+      "cancelled",
+      "draft",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": true
+    },
+    {
+     "name": "sub_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "use",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "claim",
+      "preauthorization",
+      "predetermination"
+     ]
+    },
+    {
+     "name": "billable_period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "billable_period_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "created",
+     "type": "datetime",
+     "required": true
+    },
+    {
+     "name": "priority",
+     "type": "code",
+     "required": true
+    },
+    {
+     "name": "funds_reserve",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "total_cents",
+     "type": "integer",
+     "required": false
+    },
+    {
+     "name": "total_currency",
+     "type": "string",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "patient",
+     "target": [
+      "Patient"
+     ],
+     "required": true
+    },
+    {
+     "name": "enterer",
+     "target": [
+      "Practitioner",
+      "PractitionerRole"
+     ],
+     "required": false
+    },
+    {
+     "name": "insurer",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "provider",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization"
+     ],
+     "required": true
+    },
+    {
+     "name": "prescription",
+     "target": [
+      "MedicationRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "original_prescription",
+     "target": [
+      "MedicationRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "referral",
+     "target": [
+      "ServiceRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "facility",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "insurance_coverage",
+     "target": [
+      "Coverage"
+     ],
+     "required": true
+    }
+   ]
+  },
+  {
+   "name": "ClaimResponse",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "active",
+      "cancelled",
+      "draft",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": true
+    },
+    {
+     "name": "sub_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "use",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "claim",
+      "preauthorization",
+      "predetermination"
+     ]
+    },
+    {
+     "name": "created",
+     "type": "datetime",
+     "required": true
+    },
+    {
+     "name": "outcome",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "queued",
+      "complete",
+      "error",
+      "partial"
+     ]
+    },
+    {
+     "name": "disposition",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "pre_auth_ref",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "pre_auth_period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "pre_auth_period_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "payee_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "funds_reserve",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "form_code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "payment_amount_cents",
+     "type": "integer",
+     "required": false
+    },
+    {
+     "name": "payment_amount_currency",
+     "type": "string",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "patient",
+     "target": [
+      "Patient"
+     ],
+     "required": true
+    },
+    {
+     "name": "insurer",
+     "target": [
+      "Organization"
+     ],
+     "required": true
+    },
+    {
+     "name": "requestor",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "request",
+     "target": [
+      "Claim"
+     ],
+     "required": false
+    },
+    {
+     "name": "communication_request",
+     "target": [
+      "CommunicationRequest"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "ExplanationOfBenefit",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "active",
+      "cancelled",
+      "draft",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": true
+    },
+    {
+     "name": "sub_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "use",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "claim",
+      "preauthorization",
+      "predetermination"
+     ]
+    },
+    {
+     "name": "billable_period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "billable_period_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "created",
+     "type": "datetime",
+     "required": true
+    },
+    {
+     "name": "priority",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "funds_reserve_requested",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "funds_reserve",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "outcome",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "queued",
+      "complete",
+      "error",
+      "partial"
+     ]
+    },
+    {
+     "name": "disposition",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "pre_auth_ref",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "pre_auth_ref_period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "pre_auth_ref_period_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "payment_amount_cents",
+     "type": "integer",
+     "required": false
+    },
+    {
+     "name": "payment_amount_currency",
+     "type": "string",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "patient",
+     "target": [
+      "Patient"
+     ],
+     "required": true
+    },
+    {
+     "name": "enterer",
+     "target": [
+      "Practitioner",
+      "PractitionerRole"
+     ],
+     "required": false
+    },
+    {
+     "name": "insurer",
+     "target": [
+      "Organization"
+     ],
+     "required": true
+    },
+    {
+     "name": "provider",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization"
+     ],
+     "required": true
+    },
+    {
+     "name": "prescription",
+     "target": [
+      "MedicationRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "original_prescription",
+     "target": [
+      "MedicationRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "referral",
+     "target": [
+      "ServiceRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "facility",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "claim",
+     "target": [
+      "Claim"
+     ],
+     "required": false
+    },
+    {
+     "name": "claim_response",
+     "target": [
+      "ClaimResponse"
+     ],
+     "required": false
+    },
+    {
+     "name": "insurance_coverage",
+     "target": [
+      "Coverage"
+     ],
+     "required": true
+    }
+   ]
+  },
+  {
+   "name": "CoverageEligibilityRequest",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "active",
+      "cancelled",
+      "draft",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "priority",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "purpose",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "auth-requirements",
+      "benefits",
+      "discovery",
+      "validation"
+     ]
+    },
+    {
+     "name": "serviced",
+     "type": "date",
+     "required": false
+    },
+    {
+     "name": "created",
+     "type": "datetime",
+     "required": true
+    }
+   ],
+   "relations": [
+    {
+     "name": "patient",
+     "target": [
+      "Patient"
+     ],
+     "required": true
+    },
+    {
+     "name": "enterer",
+     "target": [
+      "Practitioner",
+      "PractitionerRole"
+     ],
+     "required": false
+    },
+    {
+     "name": "provider",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "insurer",
+     "target": [
+      "Organization"
+     ],
+     "required": true
+    },
+    {
+     "name": "facility",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "CoverageEligibilityResponse",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "active",
+      "cancelled",
+      "draft",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "purpose",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "auth-requirements",
+      "benefits",
+      "discovery",
+      "validation"
+     ]
+    },
+    {
+     "name": "serviced",
+     "type": "date",
+     "required": false
+    },
+    {
+     "name": "created",
+     "type": "datetime",
+     "required": true
+    },
+    {
+     "name": "outcome",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "queued",
+      "complete",
+      "error",
+      "partial"
+     ]
+    },
+    {
+     "name": "disposition",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "pre_auth_ref",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "form",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "patient",
+     "target": [
+      "Patient"
+     ],
+     "required": true
+    },
+    {
+     "name": "requestor",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "request",
+     "target": [
+      "CoverageEligibilityRequest"
+     ],
+     "required": true
+    },
+    {
+     "name": "insurer",
+     "target": [
+      "Organization"
+     ],
+     "required": true
+    }
+   ]
+  },
+  {
+   "name": "PaymentNotice",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "active",
+      "cancelled",
+      "draft",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "created",
+     "type": "datetime",
+     "required": true
+    },
+    {
+     "name": "payment_date",
+     "type": "date",
+     "required": false
+    },
+    {
+     "name": "amount_cents",
+     "type": "integer",
+     "required": true
+    },
+    {
+     "name": "amount_currency",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "payment_status",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "request",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "response",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "provider",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "payment",
+     "target": [
+      "PaymentReconciliation"
+     ],
+     "required": true
+    },
+    {
+     "name": "payee",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "recipient",
+     "target": [
+      "Organization"
+     ],
+     "required": true
+    }
+   ]
+  },
+  {
+   "name": "PaymentReconciliation",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "active",
+      "cancelled",
+      "draft",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "period_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "created",
+     "type": "datetime",
+     "required": true
+    },
+    {
+     "name": "outcome",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "queued",
+      "complete",
+      "error",
+      "partial"
+     ]
+    },
+    {
+     "name": "disposition",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "payment_date",
+     "type": "date",
+     "required": true
+    },
+    {
+     "name": "payment_amount_cents",
+     "type": "integer",
+     "required": true
+    },
+    {
+     "name": "payment_amount_currency",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "payment_identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "form_code",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "payment_issuer",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "request",
+     "target": [
+      "Task"
+     ],
+     "required": false
+    },
+    {
+     "name": "requestor",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Account",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "active",
+      "inactive",
+      "entered-in-error",
+      "on-hold",
+      "unknown"
+     ]
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "name",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "service_period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "service_period_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "description",
+     "type": "string",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Device",
+      "Practitioner",
+      "PractitionerRole",
+      "Location",
+      "HealthcareService",
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "owner",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "part_of",
+     "target": [
+      "Account"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "ChargeItem",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "definition_uri",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "definition_canonical",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "planned",
+      "billable",
+      "not-billable",
+      "aborted",
+      "billed",
+      "entered-in-error",
+      "unknown"
+     ]
+    },
+    {
+     "name": "code",
+     "type": "code",
+     "required": true
+    },
+    {
+     "name": "occurrence",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "quantity_value",
+     "type": "decimal",
+     "required": false
+    },
+    {
+     "name": "quantity_unit",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "bodysite",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "factor_override",
+     "type": "decimal",
+     "required": false
+    },
+    {
+     "name": "price_override_cents",
+     "type": "integer",
+     "required": false
+    },
+    {
+     "name": "price_override_currency",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "override_reason",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "entered_date",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "reason",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "part_of",
+     "target": [
+      "ChargeItem"
+     ],
+     "required": false
+    },
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group"
+     ],
+     "required": true
+    },
+    {
+     "name": "context",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "performing_organization",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "requesting_organization",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "cost_center",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "enterer",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization",
+      "Patient",
+      "Device",
+      "RelatedPerson"
+     ],
+     "required": false
+    },
+    {
+     "name": "service",
+     "target": [
+      "DiagnosticReport",
+      "ImagingStudy",
+      "Immunization",
+      "MedicationDispense",
+      "Observation",
+      "Procedure"
+     ],
+     "required": false
+    },
+    {
+     "name": "product",
+     "target": [
+      "Device",
+      "Medication"
+     ],
+     "required": false
+    },
+    {
+     "name": "account",
+     "target": [
+      "Account"
+     ],
+     "required": false
+    },
+    {
+     "name": "supporting_information",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Invoice",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "draft",
+      "issued",
+      "balanced",
+      "cancelled",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "cancelled_reason",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "date",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "total_net_cents",
+     "type": "integer",
+     "required": false
+    },
+    {
+     "name": "total_net_currency",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "total_gross_cents",
+     "type": "integer",
+     "required": false
+    },
+    {
+     "name": "total_gross_currency",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "payment_terms",
+     "type": "string",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group"
+     ],
+     "required": false
+    },
+    {
+     "name": "recipient",
+     "target": [
+      "Organization",
+      "Patient",
+      "RelatedPerson"
+     ],
+     "required": false
+    },
+    {
+     "name": "issuer",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "account",
+     "target": [
+      "Account"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Person",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "name_family",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "name_given",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "gender",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "male",
+      "female",
+      "other",
+      "unknown"
+     ]
+    },
+    {
+     "name": "birth_date",
+     "type": "date",
+     "required": false
+    },
+    {
+     "name": "address_city",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "address_state",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "active",
+     "type": "boolean",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "managing_organization",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "RelatedPerson",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "active",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "relationship",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "name_family",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "name_given",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "gender",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "male",
+      "female",
+      "other",
+      "unknown"
+     ]
+    },
+    {
+     "name": "birth_date",
+     "type": "date",
+     "required": false
+    },
+    {
+     "name": "address_city",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "address_state",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "period_end",
+     "type": "datetime",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "patient",
+     "target": [
+      "Patient"
+     ],
+     "required": true
+    }
+   ]
+  },
+  {
+   "name": "Group",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "active",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "person",
+      "animal",
+      "practitioner",
+      "device",
+      "medication",
+      "substance"
+     ]
+    },
+    {
+     "name": "actual",
+     "type": "boolean",
+     "required": true
+    },
+    {
+     "name": "code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "name",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "quantity",
+     "type": "integer",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "managing_entity",
+     "target": [
+      "Organization",
+      "RelatedPerson",
+      "Practitioner",
+      "PractitionerRole"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "HealthcareService",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "active",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "specialty",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "name",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "comment",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "extra_details",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "service_provision_code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "program",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "characteristic",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "communication",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "referral_method",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "appointment_required",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "availability_exceptions",
+     "type": "string",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "provided_by",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "location",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "coverage_area",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "endpoint",
+     "target": [
+      "Endpoint"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Endpoint",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "active",
+      "suspended",
+      "error",
+      "off",
+      "entered-in-error",
+      "test"
+     ]
+    },
+    {
+     "name": "connection_type",
+     "type": "code",
+     "required": true
+    },
+    {
+     "name": "name",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "period_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "payload_type",
+     "type": "code",
+     "required": true
+    },
+    {
+     "name": "payload_mime_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "address",
+     "type": "string",
+     "required": true
+    },
+    {
+     "name": "header",
+     "type": "string",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "managing_organization",
+     "target": [
+      "Organization"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Communication",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "instantiates_canonical",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "instantiates_uri",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "preparation",
+      "in-progress",
+      "not-done",
+      "on-hold",
+      "stopped",
+      "completed",
+      "entered-in-error",
+      "unknown"
+     ]
+    },
+    {
+     "name": "status_reason",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "priority",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "routine",
+      "urgent",
+      "asap",
+      "stat"
+     ]
+    },
+    {
+     "name": "medium",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "topic",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "sent",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "received",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "reason_code",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "based_on",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "part_of",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "in_response_to",
+     "target": [
+      "Communication"
+     ],
+     "required": false
+    },
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group"
+     ],
+     "required": false
+    },
+    {
+     "name": "about",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "recipient",
+     "target": [
+      "Device",
+      "Organization",
+      "Patient",
+      "Practitioner",
+      "PractitionerRole",
+      "RelatedPerson",
+      "Group",
+      "CareTeam",
+      "HealthcareService"
+     ],
+     "required": false
+    },
+    {
+     "name": "sender",
+     "target": [
+      "Device",
+      "Organization",
+      "Patient",
+      "Practitioner",
+      "PractitionerRole",
+      "RelatedPerson",
+      "HealthcareService"
+     ],
+     "required": false
+    },
+    {
+     "name": "reason_reference",
+     "target": [
+      "Condition",
+      "Observation",
+      "DiagnosticReport",
+      "DocumentReference"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "CommunicationRequest",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "group_identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "draft",
+      "active",
+      "on-hold",
+      "revoked",
+      "completed",
+      "entered-in-error",
+      "unknown"
+     ]
+    },
+    {
+     "name": "status_reason",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "category",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "priority",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "routine",
+      "urgent",
+      "asap",
+      "stat"
+     ]
+    },
+    {
+     "name": "do_not_perform",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "medium",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "occurrence",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "authored_on",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "reason_code",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "based_on",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "replaces",
+     "target": [
+      "CommunicationRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Group"
+     ],
+     "required": false
+    },
+    {
+     "name": "about",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "requester",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization",
+      "Patient",
+      "RelatedPerson",
+      "Device"
+     ],
+     "required": false
+    },
+    {
+     "name": "recipient",
+     "target": [
+      "Device",
+      "Organization",
+      "Patient",
+      "Practitioner",
+      "PractitionerRole",
+      "RelatedPerson",
+      "Group",
+      "CareTeam",
+      "HealthcareService"
+     ],
+     "required": false
+    },
+    {
+     "name": "sender",
+     "target": [
+      "Device",
+      "Organization",
+      "Patient",
+      "Practitioner",
+      "PractitionerRole",
+      "RelatedPerson",
+      "HealthcareService"
+     ],
+     "required": false
+    },
+    {
+     "name": "reason_reference",
+     "target": [
+      "Condition",
+      "Observation",
+      "DiagnosticReport",
+      "DocumentReference"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Task",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "instantiates_canonical",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "instantiates_uri",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "group_identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "draft",
+      "requested",
+      "received",
+      "accepted",
+      "rejected",
+      "ready",
+      "cancelled",
+      "in-progress",
+      "on-hold",
+      "failed",
+      "completed",
+      "entered-in-error"
+     ]
+    },
+    {
+     "name": "status_reason",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "business_status",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "intent",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "unknown",
+      "proposal",
+      "plan",
+      "order",
+      "original-order",
+      "reflex-order",
+      "filler-order",
+      "instance-order",
+      "option"
+     ]
+    },
+    {
+     "name": "priority",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "routine",
+      "urgent",
+      "asap",
+      "stat"
+     ]
+    },
+    {
+     "name": "code",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "description",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "execution_period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "execution_period_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "authored_on",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "last_modified",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "performer_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "reason_code",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "based_on",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "part_of",
+     "target": [
+      "Task"
+     ],
+     "required": false
+    },
+    {
+     "name": "focus",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "for",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "requester",
+     "target": [
+      "Device",
+      "Organization",
+      "Patient",
+      "Practitioner",
+      "PractitionerRole",
+      "RelatedPerson"
+     ],
+     "required": false
+    },
+    {
+     "name": "owner",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "Organization",
+      "CareTeam",
+      "HealthcareService",
+      "Patient",
+      "Device",
+      "RelatedPerson"
+     ],
+     "required": false
+    },
+    {
+     "name": "location",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "reason_reference",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "insurance",
+     "target": [
+      "Coverage",
+      "ClaimResponse"
+     ],
+     "required": false
+    },
+    {
+     "name": "relevant_history",
+     "target": [
+      "Provenance"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Questionnaire",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "url",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "version",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "name",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "title",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "derived_from",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "draft",
+      "active",
+      "retired",
+      "unknown"
+     ]
+    },
+    {
+     "name": "experimental",
+     "type": "boolean",
+     "required": false
+    },
+    {
+     "name": "subject_type",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "date",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "publisher",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "description",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "jurisdiction",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "purpose",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "copyright",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "approval_date",
+     "type": "date",
+     "required": false
+    },
+    {
+     "name": "last_review_date",
+     "type": "date",
+     "required": false
+    },
+    {
+     "name": "effective_period_start",
+     "type": "datetime",
+     "required": false
+    }
+   ],
+   "relations": []
+  },
+  {
+   "name": "QuestionnaireResponse",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "identifier_value",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "questionnaire",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "status",
+     "type": "code",
+     "required": true,
+     "valueSet": [
+      "in-progress",
+      "completed",
+      "amended",
+      "entered-in-error",
+      "stopped"
+     ]
+    },
+    {
+     "name": "authored",
+     "type": "datetime",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "based_on",
+     "target": [
+      "CarePlan",
+      "ServiceRequest"
+     ],
+     "required": false
+    },
+    {
+     "name": "part_of",
+     "target": [
+      "Observation",
+      "Procedure"
+     ],
+     "required": false
+    },
+    {
+     "name": "subject",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": false
+    },
+    {
+     "name": "encounter",
+     "target": [
+      "Encounter"
+     ],
+     "required": false
+    },
+    {
+     "name": "author",
+     "target": [
+      "Device",
+      "Practitioner",
+      "PractitionerRole",
+      "Patient",
+      "RelatedPerson",
+      "Organization"
+     ],
+     "required": false
+    },
+    {
+     "name": "source",
+     "target": [
+      "Patient",
+      "Practitioner",
+      "PractitionerRole",
+      "RelatedPerson"
+     ],
+     "required": false
+    }
+   ]
+  },
+  {
+   "name": "Provenance",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "occurred",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "recorded",
+     "type": "datetime",
+     "required": true
+    },
+    {
+     "name": "policy",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "reason",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "activity",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": [
+    {
+     "name": "target",
+     "target": [
+      "Patient",
+      "Encounter",
+      "Observation"
+     ],
+     "required": true
+    },
+    {
+     "name": "location",
+     "target": [
+      "Location"
+     ],
+     "required": false
+    },
+    {
+     "name": "agent_who",
+     "target": [
+      "Practitioner",
+      "PractitionerRole",
+      "RelatedPerson",
+      "Patient",
+      "Device",
+      "Organization"
+     ],
+     "required": true
+    }
+   ]
+  },
+  {
+   "name": "AuditEvent",
+   "kind": "resource",
+   "attributes": [
+    {
+     "name": "type",
+     "type": "code",
+     "required": true
+    },
+    {
+     "name": "subtype",
+     "type": "code",
+     "required": false
+    },
+    {
+     "name": "action",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "C",
+      "R",
+      "U",
+      "D",
+      "E"
+     ]
+    },
+    {
+     "name": "period_start",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "period_end",
+     "type": "datetime",
+     "required": false
+    },
+    {
+     "name": "recorded",
+     "type": "datetime",
+     "required": true
+    },
+    {
+     "name": "outcome",
+     "type": "code",
+     "required": false,
+     "valueSet": [
+      "0",
+      "4",
+      "8",
+      "12"
+     ]
+    },
+    {
+     "name": "outcome_desc",
+     "type": "string",
+     "required": false
+    },
+    {
+     "name": "purpose_of_event",
+     "type": "code",
+     "required": false
+    }
+   ],
+   "relations": []
+  }
+ ]
+}

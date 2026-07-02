@@ -1,0 +1,89 @@
+# memory-sql examples
+
+Three runnable walkthroughs of the product surface. Each script imports **only
+the published `memory-sql` package by name** — never relative paths into
+`packages/core/src` — so they exercise exactly what a downstream consumer gets.
+They run with `tsx` against the **built** core; the root scripts build first.
+
+From the repository root:
+
+```sh
+npm run example:01   # CQ dual-oracle on the clean world
+npm run example:02   # simulation: metamorphic relations + adversarial stress
+npm run example:03   # plug YOUR OWN memory layer in as an AnswerPath
+```
+
+Everything is deterministic: fixed seeds, fixed `REFERENCE_DATE`, no wall
+clock. Running an example twice prints byte-identical reports.
+
+## 01 — CQ dual-oracle (`src/01-cq-dual-oracle.ts`)
+
+The Stage 1 pipeline end to end:
+
+1. Load the FHIR-derived ontology (50 entity types) and generate a seeded,
+   referentially consistent `InstanceWorld`.
+2. Load the world into DuckDB (one table per entity type).
+3. Monte-Carlo bind the shipped competency-question templates against real ids
+   from the world.
+4. Answer every binding twice — the deterministic **SQL oracle** (ground
+   truth) and the reference **GraphPath** (typed traversal of the in-memory
+   world) — and print the `CqReport`: per-verdict counts, agreement rate,
+   citation-resolution rate, per-regime breakdown.
+
+On the clean world the two sides must agree on every binding; the script exits
+non-zero if any verdict is not `match`. That agreement is itself the first
+validation result: two independent implementations, one answer.
+
+## 02 — Simulation (`src/02-simulation.ts`)
+
+The Stage 2 engines:
+
+- **Metamorphic testing** — properties that need zero gold labels, checked
+  with fast-check over sampled bindings: adding other patients' resources
+  must not change answers about *this* patient; shrinking a period can only
+  shrink a result set; forward and reverse traversal must agree; GraphPath
+  must equal the SQL oracle everywhere. Failures come back with a shrunk
+  counterexample.
+- **Adversarial stress** — each mutator plants one named defect in a copy of
+  the clean world (dangling reference, dropped required attribute, illegal
+  code, reversed period, orphan EOB, duplicate id, future-dated birth,
+  self-reference); the SQL invariants are replayed over each mutated world.
+  The printed mutator x invariant matrix is the contract: the clean world
+  yields **zero** violations, and every mutator trips its matching invariant.
+
+Exit code is non-zero if a relation fails on the clean stack, the clean world
+has violations, or a mutator slips past every invariant.
+
+## 03 — Custom AnswerPath (`src/03-custom-answer-path.ts`)
+
+**The product demo.** `AnswerPath` is the plug-in surface: anything that can
+answer a bound competency question — an LLM, a RAG stack, a wiki agent, a
+graph store — can be graded against the SQL ground truth.
+
+This script implements `NotesPath`, a deliberately imperfect "notes file"
+memory layer: a flat text digest per patient (the kind of memory an LLM agent
+might keep), answered by naive lookups. It is wrong in ways real memory
+layers are wrong:
+
+- **truncated charts** → a value the oracle disagrees with → `divergent`
+- **fabricated provenance** → a right answer citing a row that does not
+  support it (or does not exist) → `unsupported-citation`
+- **missing notes** → no answer where the oracle has one → `missing`
+- everything it did write down correctly → `match`
+
+The point of the example: you never told memory-sql *how* NotesPath works.
+You handed it an `answer(binding)` function; the dual-oracle engine generated
+the questions, computed ground truth in SQL, and told you exactly where — and
+how — your memory layer is wrong. Swap `NotesPath` for your own layer and the
+same report grades it.
+
+## Notes
+
+- The examples resolve `memory-sql` via the workspace (`file:../packages/core`)
+  and its `exports` map, i.e. `dist/`. If you edit core sources, rerun the
+  root `npm run example:NN` scripts (they rebuild) rather than invoking `tsx`
+  directly.
+- The CLI exercises the same code paths:
+  `node packages/core/dist/cli.js synth --seed 42 --patients 20 --out world.json`,
+  `... cq --seed 42 [--world world.json] [-n 50]`, `... sim --seed 42 [--mrs 200]`
+  (or `npx memory-sql ...` once the package is installed).

@@ -1,0 +1,22 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # build before typecheck: examples/ and tests/ resolve memory-sql types
+      # via the exports map to packages/core/dist, which only exists post-build
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
