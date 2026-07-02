@@ -13,7 +13,6 @@
  *
  * Isolation: imports ONLY the published "memory-sql" surface (by package name).
  */
-import type { CqReport } from "memory-sql"
 import {
   bindTemplates,
   fhirCqTemplates,
@@ -29,9 +28,9 @@ const SEED = 42
 const PATIENTS = 20
 const SUITE_SIZE = 50
 
-const pct = (x: number): string => `${(x * 100).toFixed(1)}%`
+const pct = (x) => `${(x * 100).toFixed(1)}%`
 
-const showReport = (report: CqReport): void => {
+const showReport = (report) => {
   console.log(
     `CqReport — path "${report.pathName}" vs SqlOracle, ${report.total} bindings ` +
       `over ${fhirCqTemplates.length} templates (seed ${SEED}, ${PATIENTS} patients)`
@@ -56,7 +55,7 @@ const showReport = (report: CqReport): void => {
   }
 }
 
-const main = async (): Promise<void> => {
+const main = async () => {
   // 1. Ontology (FHIR R4 top-50, committed JSON) + deterministic clean world.
   const ontology = loadFhirOntology()
   const world = generateWorld(ontology, { seed: SEED, patients: PATIENTS })
@@ -96,7 +95,7 @@ const main = async (): Promise<void> => {
   }
 }
 
-main().catch((error: unknown) => {
+main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 1
 })

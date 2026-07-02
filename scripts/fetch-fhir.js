@@ -12,7 +12,7 @@
  * The output is deliberately deterministic (no timestamps): re-running the script
  * against the same spec release produces a byte-identical file.
  *
- * ── Trimming / flattening rules (mirrored in packages/core/src/ontology.ts) ──
+ * ── Trimming / flattening rules (mirrored in packages/core/src/ontology.js) ──
  * 1. Only depth-1 elements (Resource.field) are considered, plus an explicit
  *    whitelist of backbone leaves that carry payer-critical joins/amounts
  *    (e.g. Claim.insurance.coverage, ExplanationOfBenefit.payment.amount).
@@ -72,7 +72,7 @@ const VALUESETS_URL = "https://hl7.org/fhir/R4/valuesets.json"
 const OUT_PATH = new URL("../packages/core/fhir-data/top50.json", import.meta.url)
 
 /** The fixed, payer-weighted top-50 FHIR R4 resource list (SPEC.md). */
-const TOP50: readonly string[] = [
+const TOP50 = [
   "Patient", "Practitioner", "PractitionerRole", "Organization", "Location",
   "Encounter", "Observation", "Condition", "Procedure", "MedicationRequest",
   "Medication", "MedicationDispense", "MedicationStatement", "Immunization",
@@ -91,7 +91,7 @@ const SKIP_FIELDS = new Set([
   "extension", "modifierExtension"
 ])
 
-const PRIMITIVE_MAP: Record<string, AttributeType> = {
+const PRIMITIVE_MAP = {
   "string": "string", "markdown": "string", "id": "string", "uri": "string",
   "url": "string", "canonical": "string", "oid": "string", "uuid": "string",
   "base64Binary": "string", "xhtml": "string", "time": "string",
@@ -106,14 +106,14 @@ const PRIMITIVE_MAP: Record<string, AttributeType> = {
 
 const QUANTITY_TYPES = new Set(["Quantity", "SimpleQuantity", "Age", "Duration", "Count", "Distance", "MoneyQuantity"])
 
-const CHOICE_PREFERENCE: readonly string[] = [
+const CHOICE_PREFERENCE = [
   "dateTime", "date", "boolean", "Quantity", "Age", "Duration", "Money",
   "Period", "string", "code", "CodeableConcept", "Coding", "integer",
   "positiveInt", "unsignedInt", "decimal", "instant", "time", "Reference"
 ]
 
 /** Reference(Any) collapses to this documented default target list (rule 9). */
-const ANY_REFERENCE_TARGETS: readonly string[] = ["Patient", "Encounter", "Observation"]
+const ANY_REFERENCE_TARGETS = ["Patient", "Encounter", "Observation"]
 
 const MAX_ATTRIBUTES = 18
 const MAX_VALUESET = 25
@@ -123,11 +123,7 @@ const MAX_VALUESET = 25
  * the patient -> claim -> coverage chain queryable and the payment amounts
  * needed for aggregate CQs. `kind` selects the flattening applied to the leaf.
  */
-const BACKBONE_WHITELIST: ReadonlyArray<{
-  readonly path: string
-  readonly kind: "reference" | "money"
-  readonly name: string
-}> = [
+const BACKBONE_WHITELIST = [
   { path: "Claim.insurance.coverage", kind: "reference", name: "insurance_coverage" },
   { path: "ExplanationOfBenefit.insurance.coverage", kind: "reference", name: "insurance_coverage" },
   { path: "ExplanationOfBenefit.payment.amount", kind: "money", name: "payment_amount" },
@@ -137,89 +133,33 @@ const BACKBONE_WHITELIST: ReadonlyArray<{
 ]
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Minimal raw-FHIR shapes (only the slices this script touches)
-// ─────────────────────────────────────────────────────────────────────────────
-
-type AttributeType = "string" | "code" | "boolean" | "integer" | "decimal" | "date" | "datetime"
-
-interface TrimmedAttribute {
-  readonly name: string
-  readonly type: AttributeType
-  readonly required: boolean
-  readonly valueSet?: readonly string[]
-}
-interface TrimmedRelation {
-  readonly name: string
-  readonly target: readonly string[]
-  readonly required: boolean
-}
-interface TrimmedResource {
-  readonly name: string
-  readonly kind: "resource"
-  readonly attributes: readonly TrimmedAttribute[]
-  readonly relations: readonly TrimmedRelation[]
-}
-
-interface ElementType { readonly code: string; readonly targetProfile?: readonly string[] }
-interface ElementDef {
-  readonly path: string
-  readonly min?: number
-  readonly max?: string
-  readonly type?: readonly ElementType[]
-  readonly binding?: { readonly strength?: string; readonly valueSet?: string }
-}
-interface StructureDefinition {
-  readonly resourceType: string
-  readonly name: string
-  readonly kind?: string
-  readonly abstract?: boolean
-  readonly fhirVersion?: string
-  readonly snapshot?: { readonly element?: readonly ElementDef[] }
-}
-interface Bundle { readonly entry?: ReadonlyArray<{ readonly resource?: Record<string, unknown> }> }
-interface VsInclude {
-  readonly system?: string
-  readonly concept?: ReadonlyArray<{ readonly code: string }>
-  readonly filter?: readonly unknown[]
-  readonly valueSet?: readonly string[]
-}
-interface ValueSetRes {
-  readonly url: string
-  readonly compose?: { readonly include?: readonly VsInclude[]; readonly exclude?: readonly VsInclude[] }
-}
-interface CsConcept { readonly code: string; readonly concept?: readonly CsConcept[] }
-interface CodeSystemRes { readonly url: string; readonly concept?: readonly CsConcept[] }
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Pure trimming logic
 // ─────────────────────────────────────────────────────────────────────────────
 
-const snake = (s: string): string => s.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()
+const snake = (s) => s.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()
 
-const lastSegment = (url: string): string => {
+const lastSegment = (url) => {
   const parts = url.split("/")
   return parts[parts.length - 1] ?? url
 }
 
 /** Index ValueSet + CodeSystem resources from the valuesets bundle by canonical url. */
-const indexValueSets = (bundle: Bundle): { valueSets: Map<string, ValueSetRes>; codeSystems: Map<string, CodeSystemRes> } => {
-  const valueSets = new Map<string, ValueSetRes>()
-  const codeSystems = new Map<string, CodeSystemRes>()
+const indexValueSets = (bundle) => {
+  const valueSets = new Map()
+  const codeSystems = new Map()
   for (const entry of bundle.entry ?? []) {
     const res = entry.resource
     if (res === undefined) continue
     if (res["resourceType"] === "ValueSet") {
-      const vs = res as unknown as ValueSetRes
-      valueSets.set(vs.url, vs)
+      valueSets.set(res.url, res)
     } else if (res["resourceType"] === "CodeSystem") {
-      const cs = res as unknown as CodeSystemRes
-      codeSystems.set(cs.url, cs)
+      codeSystems.set(res.url, res)
     }
   }
   return { valueSets, codeSystems }
 }
 
-const flattenConcepts = (concepts: readonly CsConcept[], into: string[]): void => {
+const flattenConcepts = (concepts, into) => {
   for (const c of concepts) {
     into.push(c.code)
     if (c.concept !== undefined) flattenConcepts(c.concept, into)
@@ -231,16 +171,12 @@ const flattenConcepts = (concepts: readonly CsConcept[], into: string[]): void =
  * Returns undefined when the set is not cleanly enumerable — the ontology then
  * treats the attribute as an open code.
  */
-const expandValueSet = (
-  vsUrlVersioned: string,
-  valueSets: Map<string, ValueSetRes>,
-  codeSystems: Map<string, CodeSystemRes>
-): readonly string[] | undefined => {
+const expandValueSet = (vsUrlVersioned, valueSets, codeSystems) => {
   const url = vsUrlVersioned.split("|")[0] ?? vsUrlVersioned
   const vs = valueSets.get(url)
   const includes = vs?.compose?.include
   if (vs === undefined || includes === undefined || (vs.compose?.exclude?.length ?? 0) > 0) return undefined
-  const codes: string[] = []
+  const codes = []
   for (const inc of includes) {
     if (inc.filter !== undefined || inc.valueSet !== undefined) return undefined
     if (inc.concept !== undefined) {
@@ -258,7 +194,7 @@ const expandValueSet = (
 }
 
 /** Resolve a choice element (field[x]) to a single variant — rules 5(a)-(c). */
-const resolveChoice = (field: string, types: readonly ElementType[]): ElementType | undefined => {
+const resolveChoice = (field, types) => {
   const medRef = types.find((t) =>
     t.code === "Reference" && (t.targetProfile ?? []).some((p) => lastSegment(p) === "Medication")
   )
@@ -274,21 +210,9 @@ const resolveChoice = (field: string, types: readonly ElementType[]): ElementTyp
   return undefined
 }
 
-interface FlattenAcc {
-  attributes: TrimmedAttribute[]
-  relations: TrimmedRelation[]
-}
-
 /** Apply the type-directed flattening of rules 3-4 to one (already chosen) element variant. */
-const emitElement = (
-  acc: FlattenAcc,
-  base: string,
-  typeCode: string,
-  targetProfiles: readonly string[] | undefined,
-  required: boolean,
-  valueSet: readonly string[] | undefined
-): void => {
-  const attr = (name: string, type: AttributeType, req: boolean, vs?: readonly string[]): void => {
+const emitElement = (acc, base, typeCode, targetProfiles, required, valueSet) => {
+  const attr = (name, type, req, vs) => {
     acc.attributes.push(vs !== undefined ? { name, type, required: req, valueSet: vs } : { name, type, required: req })
   }
   if (typeCode === "Reference") {
@@ -338,16 +262,12 @@ const emitElement = (
   // anything else: pruned (rule 4)
 }
 
-const trimResource = (
-  sd: StructureDefinition,
-  valueSets: Map<string, ValueSetRes>,
-  codeSystems: Map<string, CodeSystemRes>
-): TrimmedResource => {
+const trimResource = (sd, valueSets, codeSystems) => {
   const elements = sd.snapshot?.element ?? []
   const byPath = new Map(elements.map((el) => [el.path, el]))
-  const acc: FlattenAcc = { attributes: [], relations: [] }
+  const acc = { attributes: [], relations: [] }
 
-  const bindingFor = (el: ElementDef): readonly string[] | undefined =>
+  const bindingFor = (el) =>
     el.binding?.strength === "required" && el.binding.valueSet !== undefined
       ? expandValueSet(el.binding.valueSet, valueSets, codeSystems)
       : undefined
@@ -370,7 +290,7 @@ const trimResource = (
   // Whitelisted backbone leaves (rule 1). Required only when the whole chain is
   // required. Emitted into a separate accumulator so the attribute cap below
   // can never evict them — they exist precisely because CQs need them.
-  const wlAcc: FlattenAcc = { attributes: [], relations: [] }
+  const wlAcc = { attributes: [], relations: [] }
   for (const wl of BACKBONE_WHITELIST) {
     if (!wl.path.startsWith(`${sd.name}.`)) continue
     const leaf = byPath.get(wl.path)
@@ -389,7 +309,7 @@ const trimResource = (
   const budget = MAX_ATTRIBUTES - wlAcc.attributes.length
   let attributes = acc.attributes
   if (attributes.length > budget) {
-    const kept = new Set<TrimmedAttribute>(attributes.filter((a) => a.required))
+    const kept = new Set(attributes.filter((a) => a.required))
     for (const a of attributes) {
       if (kept.size >= budget) break
       kept.add(a)
@@ -410,11 +330,11 @@ const trimResource = (
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Fetch a JSON document, optionally caching it on disk under FHIR_CACHE_DIR. */
-const loadJson = async (url: string, cacheDir: string | undefined, cacheName: string): Promise<unknown> => {
+const loadJson = async (url, cacheDir, cacheName) => {
   if (cacheDir !== undefined) {
     try {
       const cached = await fs.readFile(path.join(cacheDir, cacheName), "utf8")
-      return JSON.parse(cached) as unknown
+      return JSON.parse(cached)
     } catch {
       // cache miss — fall through to the network
     }
@@ -426,21 +346,20 @@ const loadJson = async (url: string, cacheDir: string | undefined, cacheName: st
     await fs.mkdir(cacheDir, { recursive: true })
     await fs.writeFile(path.join(cacheDir, cacheName), body, "utf8")
   }
-  return JSON.parse(body) as unknown
+  return JSON.parse(body)
 }
 
-const main = async (): Promise<void> => {
+const main = async () => {
   const cacheDir = process.env["FHIR_CACHE_DIR"]
   console.log(`fetching FHIR R4 definitions (source: ${PROFILES_URL})`)
-  const profiles = (await loadJson(PROFILES_URL, cacheDir, "profiles-resources.json")) as Bundle
-  const valuesetsBundle = (await loadJson(VALUESETS_URL, cacheDir, "valuesets.json")) as Bundle
+  const profiles = await loadJson(PROFILES_URL, cacheDir, "profiles-resources.json")
+  const valuesetsBundle = await loadJson(VALUESETS_URL, cacheDir, "valuesets.json")
 
-  const sds = new Map<string, StructureDefinition>()
+  const sds = new Map()
   for (const entry of profiles.entry ?? []) {
     const res = entry.resource
     if (res !== undefined && res["resourceType"] === "StructureDefinition") {
-      const sd = res as unknown as StructureDefinition
-      if (sd.kind === "resource" && sd.abstract !== true) sds.set(sd.name, sd)
+      if (res.kind === "resource" && res.abstract !== true) sds.set(res.name, res)
     }
   }
   const missing = TOP50.filter((n) => !sds.has(n))
@@ -449,7 +368,7 @@ const main = async (): Promise<void> => {
   }
 
   const { valueSets, codeSystems } = indexValueSets(valuesetsBundle)
-  const resources = TOP50.map((name) => trimResource(sds.get(name)!, valueSets, codeSystems))
+  const resources = TOP50.map((name) => trimResource(sds.get(name), valueSets, codeSystems))
 
   const out = {
     meta: {
@@ -480,7 +399,7 @@ const main = async (): Promise<void> => {
   )
 }
 
-main().catch((err: unknown) => {
+main().catch((err) => {
   console.error(`fetch-fhir failed: ${err instanceof Error ? err.message : String(err)}`)
   process.exitCode = 1
 })

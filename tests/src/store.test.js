@@ -30,12 +30,11 @@ import {
   tableColumns,
   tableName
 } from "memory-sql"
-import type { InstanceWorld, Ontology, SqlValue, Store } from "memory-sql"
 
-const ontology: Ontology = loadFhirOntology()
+const ontology = loadFhirOntology()
 
 /** Run `f` against a fresh in-memory DuckDB store (closed on settle). */
-const withStore = async <A>(f: (store: Store) => Promise<A>): Promise<A> => {
+const withStore = async (f) => {
   const store = await openStore()
   try {
     return await f(store)
@@ -44,7 +43,7 @@ const withStore = async <A>(f: (store: Store) => Promise<A>): Promise<A> => {
   }
 }
 
-const countRows = async (store: Store, table: string): Promise<number> => {
+const countRows = async (store, table) => {
   const result = await store.query(`SELECT COUNT(*) FROM ${quoteIdent(table)}`)
   return Number(result.rows[0]?.[0])
 }
@@ -94,7 +93,7 @@ describe("store: pure schema mapping", () => {
     const statements = ddl(ontology)
     expect(statements).toHaveLength(ontology.entityTypes.length)
     for (const [i, statement] of statements.entries()) {
-      const et = ontology.entityTypes[i]!
+      const et = ontology.entityTypes[i]
       expect(statement).toMatch(/^CREATE TABLE /)
       expect(statement).toContain(quoteIdent(tableName(et.name)))
     }
@@ -126,7 +125,7 @@ describe("store: live DuckDB", () => {
     const world = generateWorld(ontology, { seed: 7, patients: 5 })
     const counts = await withStore(async (store) => {
       await loadWorld(store, ontology, world)
-      const out: Record<string, number> = {}
+      const out = {}
       for (const name of entityTypeNames(ontology)) {
         out[name] = await countRows(store, tableName(name))
       }
@@ -144,7 +143,7 @@ describe("store: live DuckDB", () => {
       const a = await countRows(store, "patient")
       await loadWorld(store, ontology, world)
       const b = await countRows(store, "patient")
-      return [a, b] as const
+      return [a, b]
     })
     expect(first).toBe(world["Patient"]?.length ?? 0)
     expect(second).toBe(first)
@@ -153,8 +152,8 @@ describe("store: live DuckDB", () => {
   it("round-trips cell values, including NULLs and reserved-word columns", async () => {
     const patients = generateWorld(ontology, { seed: 13, patients: 4 })["Patient"] ?? []
     expect(patients.length).toBeGreaterThan(0)
-    const sample = patients[0]!
-    const world: InstanceWorld = { Patient: patients }
+    const sample = patients[0]
+    const world = { Patient: patients }
     const row = await withStore(async (store) => {
       await loadWorld(store, ontology, world)
       const result = await store.query(
@@ -162,7 +161,7 @@ describe("store: live DuckDB", () => {
       )
       return result.rows[0]
     })
-    const normalize = (v: SqlValue | undefined): SqlValue => (v === undefined ? null : v)
+    const normalize = (v) => (v === undefined ? null : v)
     expect(row).toBeDefined()
     expect(row?.[0]).toBe(normalize(sample["gender"]))
     expect(row?.[1]).toBe(normalize(sample["birth_date"]))
@@ -172,7 +171,7 @@ describe("store: live DuckDB", () => {
   it("with an ontology, loadWorld creates empty tables for absent types (negative controls)", async () => {
     // A world holding only patients must still produce a queryable (empty)
     // claim table — negative-control CQs depend on querying empty tables.
-    const world: InstanceWorld = {
+    const world = {
       Patient: [{ id: "patient-1", gender: "female", birth_date: "1980-04-01" }]
     }
     const claimCount = await withStore(async (store) => {
@@ -183,7 +182,7 @@ describe("store: live DuckDB", () => {
   })
 
   it("without an ontology, loadWorld infers tables from the rows (fixture worlds)", async () => {
-    const world: InstanceWorld = {
+    const world = {
       Condition: [
         { id: "condition-1", subject_ref: "patient-1", clinical_status: "active" },
         { id: "condition-2", subject_ref: "patient-2", clinical_status: "resolved" }
@@ -200,7 +199,7 @@ describe("store: live DuckDB", () => {
 
 describe("store: the load boundary rejects bad worlds (pre-DDL, pointed errors)", () => {
   it("rejects a world keyed by an unknown entity type", async () => {
-    const world: InstanceWorld = { NotAResource: [{ id: "x-1" }] }
+    const world = { NotAResource: [{ id: "x-1" }] }
     await withStore(async (store) => {
       await expect(loadWorld(store, ontology, world)).rejects.toThrow(/NotAResource/)
       await expect(loadWorld(store, ontology, world)).rejects.toMatchObject({
@@ -214,16 +213,16 @@ describe("store: the load boundary rejects bad worlds (pre-DDL, pointed errors)"
     // total_cents is INTEGER in the ontology; a string "2500" would be cast on
     // INSERT (store sees 2500) while the in-memory graph sees "2500" — the two
     // reference oracles would diverge on a world defect. Reject at the boundary.
-    const poisoned: InstanceWorld = {
+    const poisoned = {
       Claim: [{ id: "claim-1", total_cents: "2500" }]
     }
     await withStore(async (store) => {
       const failure = await loadWorld(store, ontology, poisoned).then(
         () => null,
-        (cause: unknown) => cause
+        (cause) => cause
       )
       expect(failure).toBeInstanceOf(MemorySqlError)
-      const error = failure as MemorySqlError
+      const error = failure
       expect(error.op).toBe("load")
       // Pointed: names the row, the column, and both sides of the mismatch.
       expect(error.message).toMatch(/Claim\[claim-1\]/)
@@ -239,7 +238,7 @@ describe("store: the load boundary rejects bad worlds (pre-DDL, pointed errors)"
   })
 
   it("duplicate ids still fail the INSERT — id is a real PRIMARY KEY", async () => {
-    const world: InstanceWorld = {
+    const world = {
       Patient: [
         { id: "patient-1", gender: "female", birth_date: "1980-04-01" },
         { id: "patient-1", gender: "male", birth_date: "1990-08-15" }

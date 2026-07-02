@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, js]
   pull_request:
 
 jobs:
@@ -14,9 +14,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      # build before typecheck: examples/ and tests/ resolve memory-sql types
-      # via the exports map to packages/core/dist, which only exists post-build
+      # no build or typecheck on this branch: plain ESM JS, node runs src directly
       - run: npm ci
-      - run: npm run build
-      - run: npm run typecheck
+      - run: npm run check
       - run: npm test

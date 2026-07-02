@@ -25,17 +25,6 @@
  *
  * Isolation: imports ONLY the published "memory-sql" surface (by package name).
  */
-import type {
-  Answer,
-  AnswerPath,
-  Citation,
-  CqBinding,
-  CqReport,
-  CqTemplate,
-  InstanceWorld,
-  Row,
-  SupportRow
-} from "memory-sql"
 import {
   generateWorld,
   loadFhirOntology,
@@ -49,13 +38,13 @@ import {
 const SEED = 2026
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. Three competency questions, typed against the public CqTemplate model.
+// 1. Three competency questions, shaped after the public CqTemplate model.
 //    Examples 01/02 use the shipped FHIR templates; here we bring our own to
 //    show the model is open: any question expressible as SQL (the oracle plan)
 //    plus a typed traversal (the reference plan) over the ontology.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const activeConditions: CqTemplate = {
+const activeConditions = {
   id: "notes/active-conditions",
   regime: "point-lookup",
   expectedKind: "set",
@@ -80,7 +69,7 @@ const activeConditions: CqTemplate = {
 // Scalar templates follow the oracle's support-set convention: one row per
 // supporting instance with its numeric contribution in a "value" column — the
 // oracle sums contributions, so citations stay auditable even for aggregates.
-const eobPaidTotal: CqTemplate = {
+const eobPaidTotal = {
   id: "notes/eob-paid-total",
   regime: "aggregate",
   expectedKind: "scalar",
@@ -93,7 +82,7 @@ const eobPaidTotal: CqTemplate = {
   graph: (g, b) => {
     const patient = g.node("Patient", paramString(b, "patient"))
     if (patient === undefined) return []
-    return g.incoming("ExplanationOfBenefit", "patient", patient).map((n): SupportRow => {
+    return g.incoming("ExplanationOfBenefit", "patient", patient).map((n) => {
       const cents = n.row["payment_amount_cents"]
       return {
         entityType: "ExplanationOfBenefit",
@@ -104,7 +93,7 @@ const eobPaidTotal: CqTemplate = {
   }
 }
 
-const activeCoverage: CqTemplate = {
+const activeCoverage = {
   id: "notes/active-coverage",
   regime: "temporal",
   expectedKind: "set",
@@ -139,7 +128,7 @@ const templates = [activeConditions, eobPaidTotal, activeCoverage]
 // Bindings are built explicitly over EVERY patient (rather than Monte-Carlo
 // sampled with bindTemplates as in example 01) so the demo verdict mix is
 // guaranteed by construction: 20 patients x 3 questions = 60 gradings.
-const bindingsFor = (world: InstanceWorld): CqBinding[] =>
+const bindingsFor = (world) =>
   (world["Patient"] ?? []).flatMap((row) =>
     templates.map((template) => ({
       template,
@@ -149,18 +138,17 @@ const bindingsFor = (world: InstanceWorld): CqBinding[] =>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. The toy memory layer: take notes once, then answer from notes only.
+//
+//    Each patient's notes are a plain object:
+//      - activeConditions: active condition ids as written down (busy charts
+//        get truncated)
+//      - eobTotalCents: EOB payment total in cents, correctly summed at
+//        note-taking time
+//      - eobSources: where the total supposedly came from (sometimes
+//        fabricated) — an array of { entityType, id } citations
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface PatientNotes {
-  /** Active condition ids as written down (busy charts get truncated). */
-  readonly activeConditions: readonly string[]
-  /** EOB payment total in cents, correctly summed at note-taking time. */
-  readonly eobTotalCents: number
-  /** Where the total supposedly came from (sometimes fabricated). */
-  readonly eobSources: readonly Citation[]
-}
-
-const rowsOf = (world: InstanceWorld, entityType: string): readonly Row[] => world[entityType] ?? []
+const rowsOf = (world, entityType) => world[entityType] ?? []
 
 /**
  * The note-taker. Reads the world once and writes a digest per patient — with
@@ -168,8 +156,8 @@ const rowsOf = (world: InstanceWorld, entityType: string): readonly Row[] => wor
  * structure (chart size, patient index), not off randomness, so the report is
  * identical on every run.
  */
-const takeNotes = (world: InstanceWorld): Map<string, PatientNotes> => {
-  const notes = new Map<string, PatientNotes>()
+const takeNotes = (world) => {
+  const notes = new Map()
   rowsOf(world, "Patient").forEach((patient, index) => {
     const patientId = String(patient["id"])
 
@@ -190,7 +178,7 @@ const takeNotes = (world: InstanceWorld): Map<string, PatientNotes> => {
     // attributed to an EOB id that does not exist — fabricated provenance, the
     // note-file equivalent of a hallucinated source. The VALUE is still right;
     // only the mechanical citation audit catches it.
-    const eobSources: Citation[] =
+    const eobSources =
       eobs.length > 0 && index % 2 === 1
         ? [{ entityType: "ExplanationOfBenefit", id: "explanation_of_benefit-999" }]
         : eobs.map((e) => ({ entityType: "ExplanationOfBenefit", id: String(e["id"]) }))
@@ -205,9 +193,9 @@ const takeNotes = (world: InstanceWorld): Map<string, PatientNotes> => {
 
 /** Answer from the notes alone. An AnswerPath closes over its own state and
  * returns a plain Promise — a layer brings its own world, its own runtime. */
-const makeNotesPath = (notes: Map<string, PatientNotes>): AnswerPath => ({
+const makeNotesPath = (notes) => ({
   name: "notes-file",
-  answer: async (binding: CqBinding): Promise<Answer> => {
+  answer: async (binding) => {
     const chart = notes.get(paramString(binding, "patient"))
     switch (binding.template.id) {
       case "notes/active-conditions": {
@@ -235,7 +223,7 @@ const makeNotesPath = (notes: Map<string, PatientNotes>): AnswerPath => ({
 // 3. Generate, load, grade, read the report.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const showReport = (report: CqReport): void => {
+const showReport = (report) => {
   console.log(`memory-sql grading "${report.pathName}" — ${report.total} questions, seed ${SEED}`)
   console.log("")
   console.log("verdicts:")
@@ -248,13 +236,13 @@ const showReport = (report: CqReport): void => {
   console.log(`citation-resolves rate:  ${(report.citationResolvesRate * 100).toFixed(1)}%`)
 
   // One concrete grading per failure mode — the actionable part of the report.
-  for (const wanted of ["divergent", "unsupported-citation", "missing"] as const) {
+  for (const wanted of ["divergent", "unsupported-citation", "missing"]) {
     const example = report.results.find((r) => r.verdict === wanted)
     if (example === undefined) continue
     console.log("")
     // citations are { entityType, id } objects; print them as EntityType/id so
     // nobody reads them back as bare id strings (bare strings never resolve)
-    const cites = (cs: ReadonlyArray<Citation>): string => `[${cs.map((c) => `${c.entityType}/${c.id}`).join(", ")}]`
+    const cites = (cs) => `[${cs.map((c) => `${c.entityType}/${c.id}`).join(", ")}]`
     console.log(`${wanted}: ${example.question}`)
     console.log(`  oracle: ${JSON.stringify(example.oracle.value)} cites ${cites(example.oracle.citations)}`)
     console.log(
@@ -264,12 +252,12 @@ const showReport = (report: CqReport): void => {
   }
 }
 
-const main = async (): Promise<void> => {
+const main = async () => {
   const ontology = loadFhirOntology()
   const world = generateWorld(ontology, { seed: SEED, patients: 20 })
 
   const store = await openStore()
-  let report: CqReport
+  let report
   try {
     const notesPath = makeNotesPath(takeNotes(world))
     // runCq loads the world itself ({ ontology } = exact DDL); `templates`
@@ -295,7 +283,7 @@ const main = async (): Promise<void> => {
   if (!caught) process.exitCode = 1
 }
 
-main().catch((error: unknown) => {
+main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 1
 })

@@ -4,7 +4,7 @@
  * Why this validates the generator: the whole validation story rests on the
  * CLEAN world being clean *by construction*. If the generator ever emitted a
  * dangling reference or an out-of-value-set code, the stress engine's
- * "clean = zero violations" baseline (asserted engine-side in stress.test.ts)
+ * "clean = zero violations" baseline (asserted engine-side in stress.test.js)
  * would be meaningless and every mutator test would be ambiguous. Here we
  * verify determinism and re-derive referential consistency structurally from
  * the ontology metadata — an independent check that does not go through the
@@ -21,9 +21,8 @@ import {
   requireEntityType,
   tableName
 } from "memory-sql"
-import type { InstanceWorld, Ontology } from "memory-sql"
 
-const ontology: Ontology = loadFhirOntology()
+const ontology = loadFhirOntology()
 
 describe("synth: determinism", () => {
   it("same seed => deep-equal worlds", () => {
@@ -73,11 +72,11 @@ describe("synth: sizing", () => {
  * Structural clean-world validation: re-implements the core invariants
  * directly from ontology metadata (the closed-world analogue of "zero stress
  * violations" without depending on the sim engine — that engine-level zero
- * is asserted in stress.test.ts).
+ * is asserted in stress.test.js).
  */
 describe("synth: referential consistency of the clean world", () => {
-  const world: InstanceWorld = generateWorld(ontology, { seed: 42, patients: 10 })
-  const idsByType = new Map<string, Set<string>>(
+  const world = generateWorld(ontology, { seed: 42, patients: 10 })
+  const idsByType = new Map(
     entityTypeNames(ontology).map((name) => [
       name,
       new Set((world[name] ?? []).map((r) => String(r["id"])))
@@ -93,7 +92,7 @@ describe("synth: referential consistency of the clean world", () => {
           const targetType =
             relation.target.length > 1
               ? String(row[relationRefTypeColumn(relation.name)])
-              : relation.target[0]!
+              : relation.target[0]
           expect(relation.target, `${et.name}.${relation.name} ref_type`).toContain(targetType)
           expect(
             idsByType.get(targetType)?.has(String(ref)),
@@ -147,7 +146,7 @@ describe("synth: referential consistency of the clean world", () => {
       const names = new Set(et.attributes.map((a) => a.name))
       const pairs = et.attributes
         .filter((a) => a.name.endsWith("_start"))
-        .map((a) => [a.name, `${a.name.slice(0, -"_start".length)}_end`] as const)
+        .map((a) => [a.name, `${a.name.slice(0, -"_start".length)}_end`])
         .filter((pair) => names.has(pair[1]))
       for (const row of world[et.name] ?? []) {
         for (const [startCol, endCol] of pairs) {

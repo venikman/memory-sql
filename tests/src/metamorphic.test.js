@@ -29,16 +29,8 @@ import {
   temporalNarrowing,
   withParam
 } from "memory-sql"
-import type {
-  AnswerPath,
-  CqBinding,
-  InstanceWorld,
-  MetamorphicReport,
-  MetamorphicRunOptions,
-  Ontology
-} from "memory-sql"
 
-const ontology: Ontology = loadFhirOntology()
+const ontology = loadFhirOntology()
 const world = generateWorld(ontology, { seed: 42, patients: 8 })
 
 // Round-robin: two bindings per shipped template, from real world rows.
@@ -48,19 +40,19 @@ const bindings = bindTemplates(fhirCqTemplates, world, makeRng(11), fhirCqTempla
 // so the planted-bug run feeds it period-parameterized bindings only.
 const temporalBindings = bindings.filter((b) => b.template.params.some((p) => p.kind === "period"))
 
-const correctPath = (w: InstanceWorld): AnswerPath => makeGraphPath(w, ontology)
+const correctPath = (w) => makeGraphPath(w, ontology)
 
 /**
  * The planted traversal bug: a GraphPath variant that ignores every period
  * filter by silently widening any {period} parameter to all of time before
  * delegating to the real typed traversal.
  */
-const periodIgnoringPath = (w: InstanceWorld): AnswerPath => {
+const periodIgnoringPath = (w) => {
   const inner = makeGraphPath(w, ontology)
   return {
     name: "graph-path-ignoring-period-filters",
     answer: (binding) => {
-      let widened: CqBinding = binding
+      let widened = binding
       for (const [name, value] of Object.entries(binding.params)) {
         if (isPeriod(value)) {
           widened = withParam(widened, name, { start: "1900-01-01", end: "2999-12-31" })
@@ -72,7 +64,7 @@ const periodIgnoringPath = (w: InstanceWorld): AnswerPath => {
 }
 
 /** Run the metamorphic engine over a fresh in-memory store (closed on settle). */
-const run = async (opts: MetamorphicRunOptions): Promise<MetamorphicReport> => {
+const run = async (opts) => {
   const store = await openStore()
   try {
     return await runMetamorphic(store, world, opts)
@@ -114,7 +106,7 @@ describe("metamorphic: shipped relations", () => {
   })
 
   it("is deterministic: same seed, same world, same report", async () => {
-    const opts: MetamorphicRunOptions = {
+    const opts = {
       ontology,
       bindings,
       makePath: correctPath,

@@ -8,16 +8,14 @@
  * per-row numeric contribution the oracle sums. The oracle is intentionally
  * thin: whatever SQL a template ships IS the ground truth.
  */
-import type { Answer, AnswerKind, Citation, CqBinding, SupportRow } from "./cq.js"
 import { MemorySqlError } from "./ontology.js"
-import type { QueryResult, Store } from "./store.js"
 
-const citationKey = (c: Citation): string => `${c.entityType} ${c.id}`
+const citationKey = (c) => `${c.entityType} ${c.id}`
 
-/** Dedupe + sort citations into canonical order (also used by cq.ts's canonicalizeAnswer). */
-export const canonicalCitations = (citations: ReadonlyArray<Citation>): Citation[] => {
-  const seen = new Set<string>()
-  const out: Citation[] = []
+/** Dedupe + sort citations into canonical order (also used by cq.js's canonicalizeAnswer). */
+export const canonicalCitations = (citations) => {
+  const seen = new Set()
+  const out = []
   for (const c of citations) {
     if (!seen.has(citationKey(c))) {
       seen.add(citationKey(c))
@@ -30,12 +28,13 @@ export const canonicalCitations = (citations: ReadonlyArray<Citation>): Citation
 }
 
 /**
- * Fold a support set into a canonical Answer — the single shared
- * canonicalization used by BOTH the SQL oracle and the GraphPath:
- * set -> sorted unique supporting ids; scalar -> sum of per-row contributions
- * (0 when empty); boolean -> "at least one supporting row exists".
+ * Fold a support set into a canonical Answer `{ kind, value, citations }` —
+ * the single shared canonicalization used by BOTH the SQL oracle and the
+ * GraphPath: set -> sorted unique supporting ids; scalar -> sum of per-row
+ * contributions (0 when empty); boolean -> "at least one supporting row
+ * exists".
  */
-export const answerFromSupport = (kind: AnswerKind, support: ReadonlyArray<SupportRow>): Answer => {
+export const answerFromSupport = (kind, support) => {
   const citations = canonicalCitations(support)
   switch (kind) {
     case "set":
@@ -47,17 +46,15 @@ export const answerFromSupport = (kind: AnswerKind, support: ReadonlyArray<Suppo
   }
 }
 
-/** The oracle surface the engines consume; tests substitute hand-computed oracles through it. */
-export interface Oracle {
-  readonly answer: (binding: CqBinding) => Promise<Answer>
-}
+// The oracle surface the engines consume is `{ answer(binding) -> Promise<Answer> }`;
+// tests substitute hand-computed oracles through it.
 
 /**
  * Map a query result to support rows per the convention above. Contract
  * violations (missing id/value columns, non-numeric contributions) are
  * template bugs, surfaced as MemorySqlError rather than silently mis-grading.
  */
-const supportFromResult = (binding: CqBinding, result: QueryResult): SupportRow[] => {
+const supportFromResult = (binding, result) => {
   const template = binding.template
   const idIdx = result.columns.indexOf("id")
   if (idIdx < 0) {
@@ -71,7 +68,7 @@ const supportFromResult = (binding: CqBinding, result: QueryResult): SupportRow[
   if (template.expectedKind === "scalar" && valueIdx < 0) {
     throw new MemorySqlError("oracle", `template "${template.id}": scalar templates must SELECT a numeric "value" column`)
   }
-  const support: SupportRow[] = []
+  const support = []
   for (const row of result.rows) {
     const id = row[idIdx]
     if (id === null || id === undefined) continue // a NULL id cannot support anything (outer joins etc.)
@@ -92,17 +89,17 @@ const supportFromResult = (binding: CqBinding, result: QueryResult): SupportRow[
 }
 
 /** The deterministic SQL ground truth over a loaded store. */
-export const makeSqlOracle = (store: Store): Oracle => ({
+export const makeSqlOracle = (store) => ({
   answer: async (binding) => {
     const templateId = binding.template.id
-    let sql: string
+    let sql
     try {
       sql = binding.template.sql(binding)
     } catch (cause) {
       if (cause instanceof MemorySqlError) throw cause
       throw new MemorySqlError("oracle", `template "${templateId}": sql() threw: ${String(cause)}`, cause)
     }
-    let result: QueryResult
+    let result
     try {
       result = await store.query(sql)
     } catch (cause) {

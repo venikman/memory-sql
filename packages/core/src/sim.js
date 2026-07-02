@@ -1,93 +1,64 @@
 /**
- * Stage 2a — metamorphic relations (the stress engine lives in sim-stress.ts;
+ * Stage 2a — metamorphic relations (the stress engine lives in sim-stress.js;
  * its public surface is re-exported below, so `memory-sql` stays one flat
  * entry). A metamorphic relation states how an answer MUST change (or not)
  * under a known transformation of the world or question — checkable with zero
  * gold labels. Answers are compared through Stage 1's OWN canonicalization
- * (cq.ts canonicalizeAnswer + answerValuesEqual), so the sim grades exactly
+ * (cq.js canonicalizeAnswer + answerValuesEqual), so the sim grades exactly
  * as strictly as computeVerdict. The seeded runner (no fast-check) reports
  * the FIRST failing case (binding index + case seed, replayable) — no
  * shrinking, the documented v2 trade-off.
  */
 import { answerValuesEqual, canonicalValue, canonicalizeAnswer, isPeriod, makeGraphPath, stableKey, withParam } from "./cq.js"
-import type { Answer, AnswerPath, CqBinding, Period } from "./cq.js"
 import { makeSqlOracle } from "./oracle.js"
-import type { Oracle } from "./oracle.js"
 import { MemorySqlError, getEntityType } from "./ontology.js"
-import type { EntityType, Ontology, Relation } from "./ontology.js"
 import { formatIsoDate, makeRng, parseIsoDays } from "./rng.js"
-import type { Rng } from "./rng.js"
 import { describeCause, fnv1a } from "./sim-stress.js"
 import { loadWorld, quoteIdent, relationRefColumn, relationRefTypeColumn, sqlLiteral, tableName } from "./store.js"
-import type { InstanceWorld, Row, SqlValue, Store } from "./store.js"
 import { generateWorld } from "./synth.js"
 
 export {
   duplicateIdMutator, fhirInvariants, fhirStressMutators, formatStressReport, replay, runStress
 } from "./sim-stress.js"
-export type {
-  Invariant, InvariantViolation, MutationResult, ReplayResult, SqlInvariant, StressMutator, StressMutatorRun,
-  StressReport, StressRunOptions, WorldInvariant
-} from "./sim-stress.js"
 
 // ── Metamorphic model ────────────────────────────────────────────────────────
 
 /** Who answers a case: the AnswerPath under test or the deterministic SQL oracle. */
-export type MrEvaluator = "path" | "oracle"
+export const MR_EVALUATORS = ["path", "oracle"]
 
-export type MrExpectation = "equal" | "subset" | "unchanged-answer"
+/** How a follow-up answer is compared against the source answer. */
+export const MR_EXPECTATIONS = ["equal", "subset", "unchanged-answer"]
 
-/** The source case an MR transforms. */
-export interface MrCase { readonly ontology: Ontology; readonly world: InstanceWorld; readonly binding: CqBinding }
+// The source case an MR transforms is { ontology, world, binding }; the
+// transformed follow-up case is { world, binding, note? } (`null` from a
+// transform means "not applicable"). The harness handed to a relation's
+// `check` carries everything it needs: { ontology, world, path, makePath,
+// oracle, store } — the loaded source world, the AnswerPath under test,
+// `makePath` to rebuild the path over a transformed world, the oracle, the
+// store. Outcomes are { holds, skipped, detail }.
 
-/** The transformed follow-up case; `null` from a transform means "not applicable". */
-export interface MrFollowup { readonly world: InstanceWorld; readonly binding: CqBinding; readonly note?: string }
+const mrHolds = (detail) => ({ holds: true, skipped: false, detail })
+const mrFails = (detail) => ({ holds: false, skipped: false, detail })
+const mrSkip = (detail) => ({ holds: true, skipped: true, detail })
 
-/** Everything a relation needs: the loaded source world, the AnswerPath under test,
- * `makePath` to rebuild the path over a transformed world, the oracle, the store. */
-export interface MrHarness {
-  readonly ontology: Ontology
-  readonly world: InstanceWorld
-  readonly path: AnswerPath
-  readonly makePath: (world: InstanceWorld) => AnswerPath
-  readonly oracle: Oracle
-  readonly store: Store
-}
-
-export interface MrOutcome { readonly holds: boolean; readonly skipped: boolean; readonly detail: string }
-
-const mrHolds = (detail: string): MrOutcome => ({ holds: true, skipped: false, detail })
-const mrFails = (detail: string): MrOutcome => ({ holds: false, skipped: false, detail })
-const mrSkip = (detail: string): MrOutcome => ({ holds: true, skipped: true, detail })
-
-/**
- * A metamorphic relation. Declarative relations provide `transform` and let the
- * default pipeline compare source vs follow-up under `expect` (`followupEvaluator`
- * must stay "path" when the transform changes the world — the store holds the
- * source world); relations that do not fit provide `check` and own their
- * comparison. `applicable` restricts sampling to bindings the relation can use.
- */
-export interface MetamorphicRelation {
-  readonly id: string
-  readonly describe: string
-  readonly expect: MrExpectation
-  readonly sourceEvaluator?: MrEvaluator
-  readonly followupEvaluator?: MrEvaluator
-  readonly applicable?: (binding: CqBinding) => boolean
-  readonly transform?: (source: MrCase, rng: Rng) => MrFollowup | null
-  readonly check?: (harness: MrHarness, binding: CqBinding, rng: Rng) => Promise<MrOutcome>
-}
+// A metamorphic relation is { id, describe, expect, sourceEvaluator?,
+// followupEvaluator?, applicable?, transform?, check? }. Declarative
+// relations provide `transform` and let the default pipeline compare source
+// vs follow-up under `expect` (`followupEvaluator` must stay "path" when the
+// transform changes the world — the store holds the source world); relations
+// that do not fit provide `check` and own their comparison. `applicable`
+// restricts sampling to bindings the relation can use.
 
 /** Normalize a set-ish value: arrays keep elements, null/undefined mean "empty set". */
-const asSetKeys = (value: unknown): readonly string[] | null =>
+const asSetKeys = (value) =>
   Array.isArray(value) ? value.map(stableKey) : value === null || value === undefined ? [] : null
 
-const canonicalAnswer = (answer: Answer): string => `${String(answer.kind)}: ${canonicalValue(answer.value)}`
+const canonicalAnswer = (answer) => `${String(answer.kind)}: ${canonicalValue(answer.value)}`
 
 /** `subset` semantics per answer kind, so temporal narrowing also constrains
  * aggregates: sets by inclusion, numeric scalars monotonically (a narrower period
  * cannot pay out more), booleans by implication. Equality is Stage 1's. */
-const compareAnswers = (expect: MrExpectation, rawSource: Answer, rawFollowup: Answer): MrOutcome => {
+const compareAnswers = (expect, rawSource, rawFollowup) => {
   const source = canonicalizeAnswer(rawSource)
   const followup = canonicalizeAnswer(rawFollowup)
   switch (expect) {
@@ -98,8 +69,8 @@ const compareAnswers = (expect: MrExpectation, rawSource: Answer, rawFollowup: A
         : mrFails(`answers differ — source {${canonicalAnswer(source)}} vs follow-up {${canonicalAnswer(followup)}}`)
     }
     case "subset": {
-      const sv: unknown = source.value
-      const fv: unknown = followup.value
+      const sv = source.value
+      const fv = followup.value
       const sKeys = asSetKeys(sv)
       const fKeys = asSetKeys(fv)
       if (sKeys !== null && fKeys !== null) {
@@ -124,7 +95,7 @@ const compareAnswers = (expect: MrExpectation, rawSource: Answer, rawFollowup: A
 }
 
 /** Names of a binding's Period-valued parameters, sorted for deterministic choice. */
-const periodParamNames = (binding: CqBinding): readonly string[] =>
+const periodParamNames = (binding) =>
   Object.keys(binding.params)
     .filter((name) => {
       const value = binding.params[name]
@@ -139,12 +110,12 @@ const AUGMENT_SUFFIX = "-aug"
 /** Rewrite every id (and every internal reference — the generator is referentially
  * consistent) with a suffix: the augmentation world is id-disjoint from the source,
  * so `id` PRIMARY KEY stays valid and new rows can never touch the binding's rows. */
-const suffixWorldIds = (ontology: Ontology, world: InstanceWorld, suffix: string): InstanceWorld => {
-  const out: Record<string, ReadonlyArray<Row>> = {}
+const suffixWorldIds = (ontology, world, suffix) => {
+  const out = {}
   for (const [typeName, rows] of Object.entries(world)) {
     const refCols = (getEntityType(ontology, typeName)?.relations ?? []).map((r) => relationRefColumn(r.name))
     out[typeName] = rows.map((row) => {
-      const next: Record<string, SqlValue> = { ...row }
+      const next = { ...row }
       if (typeof next["id"] === "string") next["id"] = `${next["id"]}${suffix}`
       for (const col of refCols) {
         const v = next[col]
@@ -156,19 +127,19 @@ const suffixWorldIds = (ontology: Ontology, world: InstanceWorld, suffix: string
   return out
 }
 
-const mergeWorlds = (a: InstanceWorld, b: InstanceWorld): InstanceWorld => {
-  const out: Record<string, ReadonlyArray<Row>> = {}
+const mergeWorlds = (a, b) => {
+  const out = {}
   for (const key of Object.keys(a)) out[key] = a[key] ?? []
   for (const key of Object.keys(b)) out[key] = [...(out[key] ?? []), ...(b[key] ?? [])]
   return out
 }
 
-const countRows = (world: InstanceWorld): number => Object.values(world).reduce((n, rows) => n + rows.length, 0)
+const countRows = (world) => Object.values(world).reduce((n, rows) => n + rows.length, 0)
 
 // ── The four shipped relations ───────────────────────────────────────────────
 
 /** MR 1 — answers about a patient are invariant under adding unrelated patients' data. */
-const irrelevantAugmentation: MetamorphicRelation = {
+const irrelevantAugmentation = {
   id: "irrelevant-augmentation",
   describe: "adding freshly generated resources for OTHER patients (id-disjoint mini-cohort) must not change the answer",
   expect: "unchanged-answer",
@@ -195,7 +166,7 @@ const PROBE_MAX_SPAN_DAYS = 7
  * the ORACLE says still contains support, down to a <= PROBE_MAX_SPAN_DAYS
  * window that provably contains support, and demand exact match there.
  */
-export const temporalNarrowing: MetamorphicRelation = {
+export const temporalNarrowing = {
   id: "temporal-narrowing",
   describe:
     "shrinking the {period} of a temporal question can only shrink the result set (narrow path answer must lie inside the wide oracle answer and match the narrow oracle answer, including on a provably populated short window)",
@@ -203,7 +174,7 @@ export const temporalNarrowing: MetamorphicRelation = {
   applicable: (binding) => periodParamNames(binding).length > 0,
   check: async (harness, binding, rng) => {
     const names = periodParamNames(binding)
-    const name = names.length === 0 ? undefined : names.length === 1 ? (names[0] as string) : rng.pick(names)
+    const name = names.length === 0 ? undefined : names.length === 1 ? names[0] : rng.pick(names)
     const period = name === undefined ? undefined : binding.params[name]
     if (name === undefined || period === undefined || !isPeriod(period)) return mrSkip("temporal-narrowing: not applicable to this binding")
     const start = parseIsoDays(period.start)
@@ -214,10 +185,10 @@ export const temporalNarrowing: MetamorphicRelation = {
     // narrowing deterministic per case seed, so a failure replays exactly.
     const newStart = start + rng.int(0, end - start)
     const newEnd = newStart + rng.int(0, end - newStart)
-    const narrowed: Period = { start: formatIsoDate(newStart), end: formatIsoDate(newEnd) }
+    const narrowed = { start: formatIsoDate(newStart), end: formatIsoDate(newEnd) }
     const narrowedBinding = withParam(binding, name, narrowed)
     const note = `param "${name}" [${period.start}, ${period.end}] narrowed to [${narrowed.start}, ${narrowed.end}]`
-    const withNote = (outcome: MrOutcome): MrOutcome => ({ ...outcome, detail: `${note} — ${outcome.detail}` })
+    const withNote = (outcome) => ({ ...outcome, detail: `${note} — ${outcome.detail}` })
 
     // (a) subset against the wide ground truth
     const wideOracle = await evaluate(harness, "oracle", harness.world, binding, "source")
@@ -242,7 +213,7 @@ export const temporalNarrowing: MetamorphicRelation = {
         if (left.citations.length > 0) hi = mid
         else lo = mid
       }
-      const probePeriod: Period = { start: formatIsoDate(lo), end: formatIsoDate(hi) }
+      const probePeriod = { start: formatIsoDate(lo), end: formatIsoDate(hi) }
       const probeBinding = withParam(binding, name, probePeriod)
       const probeOracle = await evaluate(harness, "oracle", harness.world, probeBinding, "probe")
       const probePath = await evaluate(harness, "path", harness.world, probeBinding, "probe")
@@ -260,12 +231,12 @@ export const temporalNarrowing: MetamorphicRelation = {
 
 /** MR 3 — world traversal and store lookup of the same relation edge must agree.
  * Candidate edges derive from the ontology at check time — nothing FHIR-specific. */
-const referentialSymmetry: MetamorphicRelation = {
+const referentialSymmetry = {
   id: "referential-symmetry",
   describe: "forward traversal over the in-memory world (rows whose <rel>_ref hits a target) equals the reverse SQL lookup in the loaded store",
   expect: "equal",
   check: async (harness, _binding, rng) => {
-    const candidates: Array<{ readonly source: EntityType; readonly relation: Relation; readonly targetType: string }> = []
+    const candidates = []
     for (const et of harness.ontology.entityTypes) {
       if ((harness.world[et.name] ?? []).length === 0) continue
       for (const relation of et.relations) {
@@ -302,7 +273,7 @@ const referentialSymmetry: MetamorphicRelation = {
 }
 
 /** MR 4 — the identity transform across evaluators: the dual oracle as a metamorphic relation. */
-const crossOracleEquality: MetamorphicRelation = {
+const crossOracleEquality = {
   id: "cross-oracle-equality",
   describe: "for every binding, the AnswerPath under test and the SQL oracle produce the same answer value",
   expect: "equal",
@@ -311,13 +282,13 @@ const crossOracleEquality: MetamorphicRelation = {
 }
 
 /** The shipped relations — ontology-generic; this is the set the FHIR product runs. */
-export const metamorphicRelations: readonly MetamorphicRelation[] = [
+export const metamorphicRelations = [
   irrelevantAugmentation, temporalNarrowing, referentialSymmetry, crossOracleEquality
 ]
 
 // ── Relation execution + seeded runner (first failing case, no shrinking) ───
 
-const evaluate = async (harness: MrHarness, evaluator: MrEvaluator, world: InstanceWorld, binding: CqBinding, label: string): Promise<Answer> => {
+const evaluate = async (harness, evaluator, world, binding, label) => {
   if (evaluator === "oracle" && world !== harness.world) {
     throw new MemorySqlError(
       "sim",
@@ -334,9 +305,9 @@ const evaluate = async (harness: MrHarness, evaluator: MrEvaluator, world: Insta
   }
 }
 
-const checkRelation = async (relation: MetamorphicRelation, harness: MrHarness, binding: CqBinding, rng: Rng): Promise<MrOutcome> => {
+const checkRelation = async (relation, harness, binding, rng) => {
   if (relation.check !== undefined) return relation.check(harness, binding, rng)
-  const source: MrCase = { ontology: harness.ontology, world: harness.world, binding }
+  const source = { ontology: harness.ontology, world: harness.world, binding }
   const followup = relation.transform === undefined ? { world: harness.world, binding } : relation.transform(source, rng)
   if (followup === null) return mrSkip(`${relation.id}: not applicable to this binding`)
   const sourceAnswer = await evaluate(harness, relation.sourceEvaluator ?? "path", harness.world, binding, "source")
@@ -345,43 +316,13 @@ const checkRelation = async (relation: MetamorphicRelation, harness: MrHarness, 
   return followup.note === undefined ? outcome : { ...outcome, detail: `${followup.note} — ${outcome.detail}` }
 }
 
-/** The first failing case of a violated relation — replayable from (bindingIndex, caseSeed). */
-export interface MrCounterexample { readonly bindingIndex: number; readonly caseSeed: number; readonly detail: string }
-
-/** `runs` = executed runs (on failure: up to and including the failing one);
- * `skipped` = transform turned out inapplicable at check time; `applicableBindings`
- * 0 = vacuous pass; `counterexample` = first failing case (no shrinking in v2). */
-export interface MetamorphicRelationResult {
-  readonly relationId: string
-  readonly describe: string
-  readonly expect: MrExpectation
-  readonly passed: boolean
-  readonly runs: number
-  readonly skipped: number
-  readonly applicableBindings: number
-  readonly counterexample: MrCounterexample | null
-}
-
-export interface MetamorphicReport {
-  readonly seed: number
-  readonly runsPerRelation: number
-  readonly bindingCount: number
-  readonly passed: boolean
-  readonly results: readonly MetamorphicRelationResult[]
-}
-
-/** `bindings` come from cq.ts bindTemplates; `makePath` builds the AnswerPath under
- * test over a given world (defaults to the reference GraphPath); `oracle` defaults
- * to the SQL oracle over the store; `runsPerRelation` defaults to 50 (`--mrs N`). */
-export interface MetamorphicRunOptions {
-  readonly ontology: Ontology
-  readonly bindings: readonly CqBinding[]
-  readonly seed: number
-  readonly makePath?: (world: InstanceWorld) => AnswerPath
-  readonly oracle?: Oracle
-  readonly relations?: readonly MetamorphicRelation[]
-  readonly runsPerRelation?: number
-}
+// A relation result is { relationId, describe, expect, passed, runs, skipped,
+// applicableBindings, counterexample }: `runs` = executed runs (on failure:
+// up to and including the failing one); `skipped` = transform turned out
+// inapplicable at check time; `applicableBindings` 0 = vacuous pass;
+// `counterexample` = the first failing case { bindingIndex, caseSeed, detail }
+// — replayable, no shrinking in v2. The report wraps them with { seed,
+// runsPerRelation, bindingCount, passed, results }.
 
 /**
  * Run every relation as a seeded property over the sampled bindings. Loads the
@@ -389,8 +330,13 @@ export interface MetamorphicRunOptions {
  * tables), then executes relations sequentially — single connection, never
  * raced. Sampling only draws bindings a relation applies to; no applicable
  * binding = explicit vacuous pass.
+ *
+ * Options: `ontology` and `bindings` (from cq.js bindTemplates) are required;
+ * `makePath` builds the AnswerPath under test over a given world (defaults to
+ * the reference GraphPath); `oracle` defaults to the SQL oracle over the
+ * store; `runsPerRelation` defaults to 50 (`--mrs N`).
  */
-export const runMetamorphic = async (store: Store, world: InstanceWorld, opts: MetamorphicRunOptions): Promise<MetamorphicReport> => {
+export const runMetamorphic = async (store, world, opts) => {
   const relations = opts.relations ?? metamorphicRelations
   const numRuns = opts.runsPerRelation ?? 50
   if (opts.bindings.length === 0) {
@@ -398,10 +344,10 @@ export const runMetamorphic = async (store: Store, world: InstanceWorld, opts: M
   }
 
   await loadWorld(store, opts.ontology, world)
-  const makePath = opts.makePath ?? ((w: InstanceWorld) => makeGraphPath(w, opts.ontology))
-  const harness: MrHarness = { ontology: opts.ontology, world, path: makePath(world), makePath, oracle: opts.oracle ?? makeSqlOracle(store), store }
+  const makePath = opts.makePath ?? ((w) => makeGraphPath(w, opts.ontology))
+  const harness = { ontology: opts.ontology, world, path: makePath(world), makePath, oracle: opts.oracle ?? makeSqlOracle(store), store }
 
-  const results: MetamorphicRelationResult[] = []
+  const results = []
   for (const relation of relations) {
     const applicableIndices = opts.bindings
       .map((binding, index) => (relation.applicable === undefined || relation.applicable(binding) ? index : -1))
@@ -416,7 +362,7 @@ export const runMetamorphic = async (store: Store, world: InstanceWorld, opts: M
     const rng = makeRng((opts.seed ^ fnv1a(relation.id)) >>> 0)
     let skipped = 0
     let runs = 0
-    let counterexample: MrCounterexample | null = null
+    let counterexample = null
     for (let i = 0; i < numRuns; i++) {
       const bindingIndex = rng.pick(applicableIndices)
       const caseSeed = rng.int(0, 0x7fffffff)
@@ -439,8 +385,8 @@ export const runMetamorphic = async (store: Store, world: InstanceWorld, opts: M
   return { seed: opts.seed, runsPerRelation: numRuns, bindingCount: opts.bindings.length, passed: results.every((r) => r.passed), results }
 }
 
-export const formatMetamorphicReport = (report: MetamorphicReport): string => {
-  const lines: string[] = [`Metamorphic run: seed ${report.seed}, ${report.runsPerRelation} runs/relation over ${report.bindingCount} bindings`]
+export const formatMetamorphicReport = (report) => {
+  const lines = [`Metamorphic run: seed ${report.seed}, ${report.runsPerRelation} runs/relation over ${report.bindingCount} bindings`]
   for (const result of report.results) {
     if (result.passed && result.applicableBindings === 0) {
       lines.push(`  PASS ${result.relationId} (vacuous: no applicable bindings)`)

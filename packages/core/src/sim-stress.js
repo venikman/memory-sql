@@ -1,6 +1,6 @@
 /**
- * Stage 2b — adversarial stress (split from sim.ts per SPEC v2's one-file
- * split allowance; sim.ts re-exports the public surface). Mutators plant
+ * Stage 2b — adversarial stress (split from sim.js per SPEC v2's one-file
+ * split allowance; sim.js re-exports the public surface). Mutators plant
  * exactly one named defect in the clean world; invariants (SQL over the
  * loaded world, or pure over the in-memory world) must catch it. runStress
  * produces the mutator x invariant matrix: the clean world replays silent and
@@ -8,16 +8,13 @@
  * stops firing, the validation layer itself has regressed. The closed-world
  * analogue of reasoner (ABox) consistency checking.
  */
-import { MemorySqlError, getEntityType } from "./ontology.js"
-import type { EntityType, Ontology, Relation } from "./ontology.js"
+import { getEntityType } from "./ontology.js"
 import { REFERENCE_DATE, makeRng } from "./rng.js"
-import type { Rng } from "./rng.js"
 import { loadWorld, openStore, quoteIdent, relationRefColumn, relationRefTypeColumn, sqlLiteral, tableName } from "./store.js"
-import type { InstanceWorld, Row, SqlValue, Store } from "./store.js"
 import { generateWorld } from "./synth.js"
 
 /** Deterministic per-name seed derivation, independent of list order (shared with the metamorphic runner). */
-export const fnv1a = (text: string): number => {
+export const fnv1a = (text) => {
   let hash = 0x811c9dc5
   for (let i = 0; i < text.length; i++) {
     hash ^= text.charCodeAt(i)
@@ -26,49 +23,35 @@ export const fnv1a = (text: string): number => {
   return hash >>> 0
 }
 
-export const describeCause = (cause: unknown): string =>
+export const describeCause = (cause) =>
   cause instanceof Error
     ? cause.message
     : cause !== null && typeof cause === "object" && "message" in cause
-      ? String((cause as { readonly message: unknown }).message)
+      ? String(cause.message)
       : String(cause)
 
 // ── Invariants ───────────────────────────────────────────────────────────────
 
-export interface InvariantViolation { readonly invariantId: string; readonly entityType: string; readonly rowId: string | null; readonly detail: string }
-
-/** Pure check over the in-memory world. Needed where the store cannot help:
- * duplicate ids violate `id TEXT PRIMARY KEY`, so a duplicate-id world fails
- * the LOAD — the invariant must see the world before the store does. */
-export interface WorldInvariant {
-  readonly id: string
-  readonly describe: string
-  readonly kind: "world"
-  readonly check: (ontology: Ontology, world: InstanceWorld) => readonly InvariantViolation[]
-}
-
-/** Check executed as SQL over the loaded world. */
-export interface SqlInvariant {
-  readonly id: string
-  readonly describe: string
-  readonly kind: "sql"
-  readonly check: (store: Store, ontology: Ontology) => Promise<readonly InvariantViolation[]>
-}
-
-export type Invariant = WorldInvariant | SqlInvariant
+// An invariant violation is { invariantId, entityType, rowId, detail }.
+//
+// Invariants come in two kinds:
+//   world — `{ id, describe, kind: "world", check(ontology, world) }`, a pure
+//     check over the in-memory world. Needed where the store cannot help:
+//     duplicate ids violate `id TEXT PRIMARY KEY`, so a duplicate-id world
+//     fails the LOAD — the invariant must see the world before the store does.
+//   sql — `{ id, describe, kind: "sql", check(store, ontology) }`, executed as
+//     SQL over the loaded world.
 
 /** Cap per violation query — reports stay readable, defects still undeniable. */
 const VIOLATION_LIMIT = 25
 
-interface ViolationQuery { readonly entityType: string; readonly sql: string; readonly detail: (row: ReadonlyArray<SqlValue>) => string }
-
 /** SQL invariant from a list of violation queries (first selected column = row id). */
-const sqlInvariant = (id: string, describe: string, queries: (ontology: Ontology) => readonly ViolationQuery[]): SqlInvariant => ({
+const sqlInvariant = (id, describe, queries) => ({
   id,
   describe,
   kind: "sql",
   check: async (store, ontology) => {
-    const out: InvariantViolation[] = []
+    const out = []
     for (const q of queries(ontology)) {
       for (const row of (await store.query(q.sql)).rows) {
         out.push({ invariantId: id, entityType: q.entityType, rowId: typeof row[0] === "string" ? row[0] : null, detail: q.detail(row) })
@@ -80,7 +63,7 @@ const sqlInvariant = (id: string, describe: string, queries: (ontology: Ontology
 
 /** Multi-target refs resolve only when `<rel>_ref_type` names a relation target AND
  * the id exists there; a NULL/unknown type with a non-null ref is a defect. */
-const referentialIntegritySql = (et: EntityType, rel: Relation): string => {
+const referentialIntegritySql = (et, rel) => {
   const table = quoteIdent(tableName(et.name))
   const ref = quoteIdent(relationRefColumn(rel.name))
   const only = rel.target[0]
@@ -102,7 +85,7 @@ const referentialIntegritySql = (et: EntityType, rel: Relation): string => {
   )
 }
 
-const referentialIntegrity: SqlInvariant = sqlInvariant(
+const referentialIntegrity = sqlInvariant(
   "referential-integrity",
   "every non-null relation reference resolves to an existing row of a declared target type",
   (ontology) =>
@@ -110,12 +93,12 @@ const referentialIntegrity: SqlInvariant = sqlInvariant(
       et.relations.map((rel) => ({
         entityType: et.name,
         sql: referentialIntegritySql(et, rel),
-        detail: (row: ReadonlyArray<SqlValue>) => `${et.name}.${rel.name}_ref = "${String(row[1] ?? "")}" does not resolve`
+        detail: (row) => `${et.name}.${rel.name}_ref = "${String(row[1] ?? "")}" does not resolve`
       }))
     )
 )
 
-const requiredPresent: SqlInvariant = sqlInvariant(
+const requiredPresent = sqlInvariant(
   "required-present",
   "required attributes and required relations are never NULL",
   (ontology) =>
@@ -131,7 +114,7 @@ const requiredPresent: SqlInvariant = sqlInvariant(
     )
 )
 
-const valueSetMembership: SqlInvariant = sqlInvariant(
+const valueSetMembership = sqlInvariant(
   "value-set-membership",
   "every non-null value of a value-set attribute is one of its codes",
   (ontology) =>
@@ -144,7 +127,7 @@ const valueSetMembership: SqlInvariant = sqlInvariant(
           return {
             entityType: et.name,
             sql: `SELECT s."id", s.${column} FROM ${quoteIdent(tableName(et.name))} s WHERE s.${column} IS NOT NULL AND s.${column} NOT IN (${codes}) ORDER BY 1 LIMIT ${VIOLATION_LIMIT}`,
-            detail: (row: ReadonlyArray<SqlValue>) => `${et.name}.${attr.name} = "${String(row[1] ?? "")}" is outside its value set`
+            detail: (row) => `${et.name}.${attr.name} = "${String(row[1] ?? "")}" is outside its value set`
           }
         })
     )
@@ -154,16 +137,16 @@ const valueSetMembership: SqlInvariant = sqlInvariant(
  * flattened FHIR Period. Bare `start`/`end` columns (Appointment, Slot) are
  * deliberately NOT pairs: in FHIR R4 those are two independent `instant` fields
  * the ontology does not relate and the generator does not order. */
-const periodPairsOf = (et: EntityType): ReadonlyArray<{ readonly start: string; readonly end: string }> => {
+const periodPairsOf = (et) => {
   const dateNames = new Set(et.attributes.filter((a) => a.type === "date" || a.type === "datetime").map((a) => a.name))
-  const pairs: Array<{ readonly start: string; readonly end: string }> = []
+  const pairs = []
   for (const name of dateNames) {
     if (name.endsWith("_start") && dateNames.has(`${name.slice(0, -6)}_end`)) pairs.push({ start: name, end: `${name.slice(0, -6)}_end` })
   }
   return pairs
 }
 
-const periodOrdering: SqlInvariant = sqlInvariant(
+const periodOrdering = sqlInvariant(
   "period-ordering",
   "every flattened Period (`<f>_start`/`<f>_end`) satisfies start <= end (ISO TEXT compares chronologically)",
   (ontology) =>
@@ -174,20 +157,20 @@ const periodOrdering: SqlInvariant = sqlInvariant(
         return {
           entityType: et.name,
           sql: `SELECT s."id", s.${start}, s.${end} FROM ${quoteIdent(tableName(et.name))} s WHERE s.${start} IS NOT NULL AND s.${end} IS NOT NULL AND s.${start} > s.${end} ORDER BY 1 LIMIT ${VIOLATION_LIMIT}`,
-          detail: (row: ReadonlyArray<SqlValue>) => `${et.name}.${pair.start} "${String(row[1] ?? "")}" > ${pair.end} "${String(row[2] ?? "")}"`
+          detail: (row) => `${et.name}.${pair.start} "${String(row[1] ?? "")}" > ${pair.end} "${String(row[2] ?? "")}"`
         }
       })
     )
 )
 
-const uniqueIds: WorldInvariant = {
+const uniqueIds = {
   id: "unique-ids",
   describe: "row ids are unique per entity type (checked on the world: duplicates cannot even load)",
   kind: "world",
   check: (_ontology, world) => {
-    const out: InvariantViolation[] = []
+    const out = []
     for (const [typeName, rows] of Object.entries(world)) {
-      const seen = new Map<string, number>()
+      const seen = new Map()
       for (const row of rows) {
         const id = row["id"]
         if (typeof id !== "string" || id.length === 0) {
@@ -204,7 +187,7 @@ const uniqueIds: WorldInvariant = {
   }
 }
 
-const noSelfReference: SqlInvariant = sqlInvariant(
+const noSelfReference = sqlInvariant(
   "no-self-reference",
   "no row references itself through a relation that may target its own entity type",
   (ontology) =>
@@ -222,7 +205,7 @@ const noSelfReference: SqlInvariant = sqlInvariant(
           return {
             entityType: et.name,
             sql: `SELECT s."id" FROM ${quoteIdent(tableName(et.name))} s WHERE s.${ref} = s."id"${typeFilter} ORDER BY 1 LIMIT ${VIOLATION_LIMIT}`,
-            detail: (row: ReadonlyArray<SqlValue>) => `${et.name}[${String(row[0] ?? "")}].${rel.name} references itself`
+            detail: (row) => `${et.name}[${String(row[0] ?? "")}].${rel.name} references itself`
           }
         })
     )
@@ -232,10 +215,7 @@ const noSelfReference: SqlInvariant = sqlInvariant(
  * reference equals the child's key reference — fires both when the via reference
  * dangles and when it reaches a row for a different key. Configs whose
  * entities/relations are absent from the ontology check vacuously. */
-const joinConsistencyInvariant = (config: {
-  readonly id: string; readonly describe: string; readonly child: string; readonly viaRelation: string
-  readonly parent: string; readonly childKeyRelation: string; readonly parentKeyRelation: string
-}): SqlInvariant =>
+const joinConsistencyInvariant = (config) =>
   sqlInvariant(config.id, config.describe, (ontology) => {
     const child = getEntityType(ontology, config.child)
     const parent = getEntityType(ontology, config.parent)
@@ -255,14 +235,14 @@ const joinConsistencyInvariant = (config: {
           `SELECT 1 FROM ${quoteIdent(tableName(parent.name))} p` +
           ` WHERE p."id" = c.${viaRef} AND p.${parentKeyRef} = c.${childKeyRef})` +
           ` ORDER BY 1 LIMIT ${VIOLATION_LIMIT}`,
-        detail: (row: ReadonlyArray<SqlValue>) =>
+        detail: (row) =>
           `${config.child}[${String(row[0] ?? "")}].${config.viaRelation} -> "${String(row[1] ?? "")}" does not reach a ${config.parent} agreeing on ${config.childKeyRelation}/${config.parentKeyRelation}`
       }
     ]
   })
 
 /** Claim -> Coverage -> Patient: a claim's coverage must exist and belong to the claim's patient. */
-const claimCoveragePatientChain: SqlInvariant = joinConsistencyInvariant({
+const claimCoveragePatientChain = joinConsistencyInvariant({
   id: "claim-coverage-patient-chain",
   describe: "every Claim's insurance coverage resolves to a Coverage whose beneficiary is the claim's patient",
   child: "Claim", viaRelation: "insurance_coverage", parent: "Coverage", childKeyRelation: "patient", parentKeyRelation: "beneficiary"
@@ -271,14 +251,14 @@ const claimCoveragePatientChain: SqlInvariant = joinConsistencyInvariant({
 /** EOB <-> Claim agreement. Item-level adjudications are pruned by the depth-1
  * flattening, so the checkable analogue the generator guarantees is that an EOB
  * explains a claim OF THE SAME PATIENT — what an orphaned/cross-wired EOB breaks. */
-const eobClaimConsistency: SqlInvariant = joinConsistencyInvariant({
+const eobClaimConsistency = joinConsistencyInvariant({
   id: "eob-claim-consistency",
   describe: "every ExplanationOfBenefit that references a Claim references one for its own patient",
   child: "ExplanationOfBenefit", viaRelation: "claim", parent: "Claim", childKeyRelation: "patient", parentKeyRelation: "patient"
 })
 
 /** Non-null Patient.birth_date must lie in [1900-01-01, REFERENCE_DATE] (ISO TEXT comparison). */
-const birthDateSanity: SqlInvariant = sqlInvariant(
+const birthDateSanity = sqlInvariant(
   "birthdate-sanity",
   `Patient.birth_date lies in [1900-01-01, ${REFERENCE_DATE}] (nobody is born after the product's fixed today)`,
   (ontology) => {
@@ -291,46 +271,38 @@ const birthDateSanity: SqlInvariant = sqlInvariant(
           `SELECT s."id", s."birth_date" FROM ${quoteIdent(tableName("Patient"))} s` +
           ` WHERE s."birth_date" IS NOT NULL AND (s."birth_date" < '1900-01-01' OR s."birth_date" > ${sqlLiteral(REFERENCE_DATE)})` +
           ` ORDER BY 1 LIMIT ${VIOLATION_LIMIT}`,
-        detail: (row: ReadonlyArray<SqlValue>) => `Patient.birth_date = "${String(row[1] ?? "")}" outside [1900-01-01, ${REFERENCE_DATE}]`
+        detail: (row) => `Patient.birth_date = "${String(row[1] ?? "")}" outside [1900-01-01, ${REFERENCE_DATE}]`
       }
     ]
   }
 )
 
 /** The full FHIR product set: the ontology-generic core (first six) + FHIR-configured chain/range checks. */
-export const fhirInvariants: readonly Invariant[] = [
+export const fhirInvariants = [
   referentialIntegrity, requiredPresent, valueSetMembership, periodOrdering, uniqueIds, noSelfReference,
   claimCoveragePatientChain, eobClaimConsistency, birthDateSanity
 ]
 
 // ── Mutators ─────────────────────────────────────────────────────────────────
 
-/** The mutated world (input world untouched — mutators are pure) + a description of the planted defect. */
-export interface MutationResult { readonly world: InstanceWorld; readonly note: string }
+// A stress mutator is `{ id, describe, expectedInvariants, mutate(ontology,
+// world, rng) }`. `mutate` returns `{ world, note }` — the mutated world
+// (input world untouched — mutators are pure) plus a description of the
+// planted defect — or null when the ontology/world offers no applicable
+// target. `expectedInvariants` MUST all trip for the matrix to mark the run
+// "ok".
 
-/** `expectedInvariants` MUST all trip for the matrix to mark the run "ok";
- * `mutate` returns null when the ontology/world offers no applicable target. */
-export interface StressMutator {
-  readonly id: string
-  readonly describe: string
-  readonly expectedInvariants: readonly string[]
-  readonly mutate: (ontology: Ontology, world: InstanceWorld, rng: Rng) => MutationResult | null
-}
+const rowsOf = (world, typeName) => world[typeName] ?? []
 
-const rowsOf = (world: InstanceWorld, typeName: string): ReadonlyArray<Row> => world[typeName] ?? []
-
-const replaceRow = (world: InstanceWorld, typeName: string, index: number, next: Row): InstanceWorld => ({
+const replaceRow = (world, typeName, index, next) => ({
   ...world,
   [typeName]: rowsOf(world, typeName).map((row, i) => (i === index ? next : row))
 })
 
-const rowId = (row: Row): string => (typeof row["id"] === "string" ? row["id"] : "?")
+const rowId = (row) => (typeof row["id"] === "string" ? row["id"] : "?")
 
 /** Point one row's relation at an id that exists nowhere (the ref TYPE stays legal — the defect is purely the dangling id). */
-const danglingReferenceMutator = (config: {
-  readonly id: string; readonly describe: string; readonly entityType: string; readonly relation: string
-  readonly expectedInvariants: readonly string[]
-}): StressMutator => ({
+const danglingReferenceMutator = (config) => ({
   id: config.id,
   describe: config.describe,
   expectedInvariants: config.expectedInvariants,
@@ -340,13 +312,13 @@ const danglingReferenceMutator = (config: {
     const rows = rowsOf(world, config.entityType)
     if (et === undefined || rel === undefined || rows.length === 0) return null
     const index = rng.int(0, rows.length - 1)
-    const victim = rows[index] as Row
+    const victim = rows[index]
     const ghost = `ghost-${rng.uuid()}`
-    const patch: Record<string, SqlValue> = { ...victim, [relationRefColumn(rel.name)]: ghost }
+    const patch = { ...victim, [relationRefColumn(rel.name)]: ghost }
     if (rel.target.length > 1) {
       const typeCol = relationRefTypeColumn(rel.name)
       const existing = victim[typeCol]
-      patch[typeCol] = typeof existing === "string" && rel.target.includes(existing) ? existing : (rel.target[0] as string)
+      patch[typeCol] = typeof existing === "string" && rel.target.includes(existing) ? existing : rel.target[0]
     }
     return { world: replaceRow(world, config.entityType, index, patch), note: `${config.entityType}[${rowId(victim)}].${rel.name}_ref -> "${ghost}" (no such row)` }
   }
@@ -354,14 +326,7 @@ const danglingReferenceMutator = (config: {
 
 /** Mutator over a candidate list: prefer the configured target (deterministic on the
  * FHIR ontology), else rng.pick a candidate, then patch one random row of its type. */
-const pickRowMutator = <C extends { readonly entityType: string }>(config: {
-  readonly id: string
-  readonly describe: string
-  readonly expectedInvariants: readonly string[]
-  readonly candidates: (ontology: Ontology, world: InstanceWorld) => readonly C[]
-  readonly prefer: (candidate: C) => boolean
-  readonly apply: (candidate: C, victim: Row) => { readonly values: Record<string, SqlValue>; readonly note: string }
-}): StressMutator => ({
+const pickRowMutator = (config) => ({
   id: config.id,
   describe: config.describe,
   expectedInvariants: config.expectedInvariants,
@@ -371,7 +336,7 @@ const pickRowMutator = <C extends { readonly entityType: string }>(config: {
     const chosen = candidates.find(config.prefer) ?? rng.pick(candidates)
     const rows = rowsOf(world, chosen.entityType)
     const index = rng.int(0, rows.length - 1)
-    const victim = rows[index] as Row
+    const victim = rows[index]
     const { values, note } = config.apply(chosen, victim)
     return { world: replaceRow(world, chosen.entityType, index, { ...victim, ...values }), note }
   }
@@ -379,14 +344,14 @@ const pickRowMutator = <C extends { readonly entityType: string }>(config: {
 
 /** Attribute candidates over populated entity types, filtered by `keep`. */
 const attributeCandidates =
-  (keep: (attr: { readonly required: boolean; readonly valueSet?: readonly string[] }) => boolean) =>
-  (ontology: Ontology, world: InstanceWorld): ReadonlyArray<{ readonly entityType: string; readonly attribute: string }> =>
+  (keep) =>
+  (ontology, world) =>
     ontology.entityTypes
       .filter((et) => rowsOf(world, et.name).length > 0)
       .flatMap((et) => et.attributes.filter(keep).map((attr) => ({ entityType: et.name, attribute: attr.name })))
 
 /** Give one row another row's id. The world invariant must catch this: the load itself dies on the PRIMARY KEY. */
-export const duplicateIdMutator: StressMutator = {
+export const duplicateIdMutator = {
   id: "duplicate-id",
   describe: "duplicate an existing row id within one entity type",
   expectedInvariants: ["unique-ids"],
@@ -399,8 +364,8 @@ export const duplicateIdMutator: StressMutator = {
     const rows = rowsOf(world, typeName)
     const i = rng.int(0, rows.length - 1)
     const j = (i + rng.int(1, rows.length - 1)) % rows.length
-    const victim = rows[j] as Row
-    const stolen = rowId(rows[i] as Row)
+    const victim = rows[j]
+    const stolen = rowId(rows[i])
     return { world: replaceRow(world, typeName, j, { ...victim, id: stolen }), note: `${typeName}[${rowId(victim)}].id -> "${stolen}" (already taken)` }
   }
 }
@@ -408,7 +373,7 @@ export const duplicateIdMutator: StressMutator = {
 /** The 8 named mutators (SPEC) — FHIR-preferred targets, generic fallbacks.
  * self-reference is the separation case: referential integrity stays green (the
  * id resolves, to the row itself), so only no-self-reference can catch it. */
-export const fhirStressMutators: readonly StressMutator[] = [
+export const fhirStressMutators = [
   danglingReferenceMutator({
     id: "dangling-reference",
     describe: "point a Claim at a Coverage id that does not exist",
@@ -481,7 +446,7 @@ export const fhirStressMutators: readonly StressMutator[] = [
         .flatMap((et) => et.relations.filter((rel) => rel.target.includes(et.name)).map((relation) => ({ entityType: et.name, relation }))),
     prefer: () => false,
     apply: (c, victim) => {
-      const values: Record<string, SqlValue> = { [relationRefColumn(c.relation.name)]: rowId(victim) }
+      const values = { [relationRefColumn(c.relation.name)]: rowId(victim) }
       if (c.relation.target.length > 1) values[relationRefTypeColumn(c.relation.name)] = c.entityType
       return { values, note: `${c.entityType}[${rowId(victim)}].${c.relation.name} -> itself` }
     }
@@ -490,15 +455,11 @@ export const fhirStressMutators: readonly StressMutator[] = [
 
 // ── replay + runStress ───────────────────────────────────────────────────────
 
-/** `firedInvariants` = distinct invariant ids with >= 1 violation; `loadError` =
- * load failure message (e.g. duplicate PRIMARY KEY) or null; `skippedInvariants`
- * = SQL invariants that could not run because the world failed to load. */
-export interface ReplayResult {
-  readonly violations: readonly InvariantViolation[]
-  readonly firedInvariants: readonly string[]
-  readonly loadError: string | null
-  readonly skippedInvariants: readonly string[]
-}
+// A replay result is { violations, firedInvariants, loadError,
+// skippedInvariants }: `firedInvariants` = distinct invariant ids with >= 1
+// violation; `loadError` = load failure message (e.g. duplicate PRIMARY KEY)
+// or null; `skippedInvariants` = SQL invariants that could not run because
+// the world failed to load.
 
 /**
  * Load a world and run every invariant against it. World-kind invariants run
@@ -506,18 +467,13 @@ export interface ReplayResult {
  * refuses it — so unique-ids must observe the world, not the store). A failed
  * load is reported, and SQL invariants are marked skipped, never silently green.
  */
-export const replay = async (
-  store: Store,
-  world: InstanceWorld,
-  ontology: Ontology,
-  invariants: readonly Invariant[] = fhirInvariants
-): Promise<ReplayResult> => {
-  const violations: InvariantViolation[] = []
+export const replay = async (store, world, ontology, invariants = fhirInvariants) => {
+  const violations = []
   for (const invariant of invariants) {
     if (invariant.kind === "world") violations.push(...invariant.check(ontology, world))
   }
-  let loadError: string | null = null
-  const skippedInvariants: string[] = []
+  let loadError = null
+  const skippedInvariants = []
   try {
     await loadWorld(store, ontology, world)
   } catch (cause) {
@@ -531,37 +487,12 @@ export const replay = async (
   return { violations, firedInvariants: [...new Set(violations.map((v) => v.invariantId))], loadError, skippedInvariants }
 }
 
-/** One matrix row: `applied` false = no applicable target; `expectationMet` = all expected invariants fired. */
-export interface StressMutatorRun {
-  readonly mutatorId: string
-  readonly describe: string
-  readonly applied: boolean
-  readonly note: string | null
-  readonly expectedInvariants: readonly string[]
-  readonly firedInvariants: readonly string[]
-  readonly expectationMet: boolean
-  readonly replay: ReplayResult | null
-}
-
-/** `cleanPassed` = the clean world replayed silent and loaded; `passed` = that AND every mutator applied and was caught. */
-export interface StressReport {
-  readonly seed: number
-  readonly invariantIds: readonly string[]
-  readonly clean: ReplayResult
-  readonly cleanPassed: boolean
-  readonly runs: readonly StressMutatorRun[]
-  readonly passed: boolean
-}
-
-/** `world` defaults to generateWorld(ontology, { seed }); `store` defaults to a
- * fresh in-memory store closed on completion (pass one to own its lifecycle). */
-export interface StressRunOptions {
-  readonly seed: number
-  readonly world?: InstanceWorld
-  readonly store?: Store
-  readonly mutators?: readonly StressMutator[]
-  readonly invariants?: readonly Invariant[]
-}
+// A StressMutatorRun is one matrix row: { mutatorId, describe, applied, note,
+// expectedInvariants, firedInvariants, expectationMet, replay } — `applied`
+// false = no applicable target; `expectationMet` = all expected invariants
+// fired. The StressReport is { seed, invariantIds, clean, cleanPassed, runs,
+// passed }: `cleanPassed` = the clean world replayed silent and loaded;
+// `passed` = that AND every mutator applied and was caught.
 
 /**
  * The mutator x invariant matrix: replay the clean world (must be silent),
@@ -569,8 +500,12 @@ export interface StressRunOptions {
  * design — one connection — and each replay reloads the world (loadWorld
  * drops/recreates tables), so runs are hermetic. Per-mutator seeds are
  * derived by fnv1a(mutator.id), independent of list order.
+ *
+ * Options: `world` defaults to generateWorld(ontology, { seed }); `store`
+ * defaults to a fresh in-memory store closed on completion (pass one to own
+ * its lifecycle); `mutators`/`invariants` default to the FHIR sets.
  */
-export const runStress = async (ontology: Ontology, opts: StressRunOptions): Promise<StressReport> => {
+export const runStress = async (ontology, opts) => {
   const mutators = opts.mutators ?? fhirStressMutators
   const invariants = opts.invariants ?? fhirInvariants
   const world = opts.world ?? generateWorld(ontology, { seed: opts.seed })
@@ -578,7 +513,7 @@ export const runStress = async (ontology: Ontology, opts: StressRunOptions): Pro
   try {
     const clean = await replay(store, world, ontology, invariants)
     const cleanPassed = clean.violations.length === 0 && clean.loadError === null
-    const runs: StressMutatorRun[] = []
+    const runs = []
     for (const mutator of mutators) {
       const rng = makeRng((opts.seed ^ fnv1a(mutator.id)) >>> 0)
       const mutation = mutator.mutate(ontology, world, rng)
@@ -611,15 +546,15 @@ export const runStress = async (ontology: Ontology, opts: StressRunOptions): Pro
 }
 
 /** Render the mutator x invariant matrix as plain text (the CLI's sim output). */
-export const formatStressReport = (report: StressReport): string => {
-  const lines: string[] = [`Stress run (seed ${report.seed}) — mutator x invariant matrix`]
+export const formatStressReport = (report) => {
+  const lines = [`Stress run (seed ${report.seed}) — mutator x invariant matrix`]
   report.invariantIds.forEach((id, i) => lines.push(`  [${String(i + 1)}] ${id}`))
 
   const names = ["clean world", ...report.runs.map((r) => r.mutatorId)]
   const nameWidth = Math.max(...names.map((n) => n.length))
   const cellWidth = Math.max(...report.invariantIds.map((_, i) => `[${String(i + 1)}]`.length), 4)
 
-  const cellsFor = (violations: readonly InvariantViolation[], skipped: readonly string[], expected: readonly string[]): readonly string[] =>
+  const cellsFor = (violations, skipped, expected) =>
     report.invariantIds.map((id) => {
       if (skipped.includes(id)) return "x"
       const count = violations.filter((v) => v.invariantId === id).length
@@ -627,7 +562,7 @@ export const formatStressReport = (report: StressReport): string => {
       return count === 0 ? (marker === "" ? "." : "*0") : `${marker}${String(count)}`
     })
 
-  const rowLine = (name: string, cells: readonly string[], verdict: string): string =>
+  const rowLine = (name, cells, verdict) =>
     `${name.padEnd(nameWidth)}  ${cells.map((c) => c.padStart(cellWidth)).join(" ")}  ${verdict}`
 
   lines.push("", rowLine("", report.invariantIds.map((_, i) => `[${String(i + 1)}]`), "verdict"))

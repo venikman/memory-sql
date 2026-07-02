@@ -23,13 +23,12 @@ import {
   replay,
   runStress
 } from "memory-sql"
-import type { InstanceWorld, Ontology, ReplayResult, StressReport } from "memory-sql"
 
-const ontology: Ontology = loadFhirOntology()
-const world: InstanceWorld = generateWorld(ontology, { seed: 42, patients: 6 })
+const ontology = loadFhirOntology()
+const world = generateWorld(ontology, { seed: 42, patients: 6 })
 
 /** Replay a world against the invariants over a fresh store (closed on settle). */
-const replayWorld = async (w: InstanceWorld): Promise<ReplayResult> => {
+const replayWorld = async (w) => {
   const store = await openStore()
   try {
     return await replay(store, w, ontology, fhirInvariants)
@@ -39,7 +38,7 @@ const replayWorld = async (w: InstanceWorld): Promise<ReplayResult> => {
 }
 
 /** SPEC-named mutators and the invariant each one MUST trip (the matrix diagonal). */
-const SPEC_DIAGONAL: ReadonlyArray<readonly [mutator: string, invariant: string]> = [
+const SPEC_DIAGONAL = [
   ["dangling-reference", "referential-integrity"],
   ["missing-required", "required-present"],
   ["illegal-code", "value-set-membership"],
@@ -87,7 +86,7 @@ describe("stress: replay", () => {
   it("duplicate-id worlds fail the load (PRIMARY KEY) yet still convict via the world invariant", async () => {
     const mutation = duplicateIdMutator.mutate(ontology, world, makeRng(1))
     expect(mutation).not.toBeNull()
-    const result = await replayWorld(mutation!.world)
+    const result = await replayWorld(mutation.world)
     // unique-ids is a world-kind invariant: it must fire without the store.
     expect(result.firedInvariants).toContain("unique-ids")
     // The store refuses the world outright, and SQL invariants report skipped
@@ -100,7 +99,7 @@ describe("stress: replay", () => {
 
 describe("stress: the mutator x invariant matrix", () => {
   it("clean row is silent and every mutator trips its named invariant", async () => {
-    const report: StressReport = await runStress(ontology, { world, seed: 2026 })
+    const report = await runStress(ontology, { world, seed: 2026 })
 
     expect(report.cleanPassed).toBe(true)
     expect(report.clean.violations).toEqual([])

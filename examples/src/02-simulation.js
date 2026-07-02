@@ -45,7 +45,7 @@ const PATIENTS = 20
 const BINDINGS = 40
 const RUNS_PER_RELATION = 100
 
-const main = async (): Promise<void> => {
+const main = async () => {
   const ontology = loadFhirOntology()
   const world = generateWorld(ontology, { seed: SEED, patients: PATIENTS })
 
@@ -53,7 +53,7 @@ const main = async (): Promise<void> => {
   // the SQL oracle as ground truth where a relation calls for it. The engine
   // run gets its own in-memory store — hermetic by construction.
   const store = await openStore()
-  let metamorphic: Awaited<ReturnType<typeof runMetamorphic>>
+  let metamorphic
   try {
     metamorphic = await runMetamorphic(store, world, {
       ontology,
@@ -86,7 +86,7 @@ const main = async (): Promise<void> => {
   }
 }
 
-main().catch((error: unknown) => {
+main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 1
 })

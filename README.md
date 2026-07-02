@@ -1,7 +1,18 @@
 # memory-sql
 
 **An ontology-backed SQL memory layer with built-in validation — one runtime
-dependency, plain TypeScript, Effect optional.**
+dependency, plain ESM JavaScript, Effect optional.**
+
+> **This branch (`js`) is the no-TypeScript variant.** All sources are plain
+> ESM `.js`; there is no build step — `node` runs `packages/core/src/`
+> directly and the package `exports` map points straight at the sources. The
+> `main` branch remains the TypeScript variant. What this branch gives up is
+> **compile-time checking** (type annotations, `tsc`, editor-level contract
+> enforcement); every **runtime** validation gate — `loadWorld` type-checking
+> of world values, the CQ citation audit, the stress invariants, the Effect
+> isolation test — is unchanged and behaves byte-for-byte like `main`.
+> Contract shapes below are still written in TypeScript *notation* as
+> documentation only.
 
 memory-sql derives a typed ontology from the FHIR R4 specification (top 50
 payer-weighted resources), generates deterministic instance worlds into SQL
@@ -61,12 +72,12 @@ The core is deliberately small and flat:
 ## Effect users
 
 Everything is wrapped in **`memory-sql/effect`**; the core never imports
-Effect — **enforced by an executable test** (`tests/src/isolation.test.ts`
-walks every `.ts` source in `packages/core/src`, `examples/src`, and
-`tests/src` and fails the build if anything outside the adapter, its example,
-and its test imports `effect` or `@effect/*`).
+Effect — **enforced by an executable test** (`tests/src/isolation.test.js`
+walks every `.js` source in `packages/core/src`, `examples/src`, `tests/src`,
+and `scripts` and fails the suite if anything outside the adapter, its
+example, and its test imports `effect` or `@effect/*`).
 
-The adapter (`packages/core/src/effect.ts`, the ONLY file importing `effect`)
+The adapter (`packages/core/src/effect.js`, the ONLY file importing `effect`)
 provides:
 
 - `MemorySqlError` as a `Data.TaggedError("MemorySqlError")` carrying
@@ -84,7 +95,7 @@ provides:
 `effect` is an **optional peer dependency**: `import "memory-sql"` never loads
 the adapter, and the main entry is fully functional with `effect` absent.
 Declare `effect` in your own dependencies if you use `memory-sql/effect`.
-See `examples/src/04-effect-adapter.ts` for the full walkthrough.
+See `examples/src/04-effect-adapter.js` for the full walkthrough.
 
 ### Migration note (v1 → v2): `AnswerPath` returns a `Promise`
 
@@ -107,30 +118,30 @@ never a suite crash.
 
 ```
                        ┌──────────────────────────────┐
-  FHIR R4 spec ──────► │ ontology.ts (generic model)  │
-  (fetch-fhir.ts,      │  top50.json → 50 EntityTypes │
+  FHIR R4 spec ──────► │ ontology.js (generic model)  │
+  (fetch-fhir.js,      │  top50.json → 50 EntityTypes │
    committed JSON)     │  (attributes + relations)    │
                        └───────────────┬──────────────┘
                                        │
                      ┌─────────────────┼─────────────────┐
                      ▼                 ▼                 ▼
              ┌──────────────┐  ┌──────────────┐  ┌─────────────┐
-             │ synth.ts     │  │ store.ts     │  │ cq.ts       │
+             │ synth.js     │  │ store.js     │  │ cq.js       │
              │ seeded PRNG →│  │ DDL + DuckDB │  │ 13 FHIR CQs │
              │ InstanceWorld│  │ + loadWorld  │  │ (5 regimes) │
              └──────┬───────┘  └──────┬───────┘  └──────┬──────┘
                     │                 │                 │
                     ▼                 ▼                 ▼
              ┌─────────────────────────────────────────────────┐
-             │ STAGE 1 · cq.ts — dual oracle                   │
-             │   oracle.ts SqlOracle (ground truth)            │
+             │ STAGE 1 · cq.js — dual oracle                   │
+             │   oracle.js SqlOracle (ground truth)            │
              │   vs AnswerPath (GraphPath reference│YOUR layer)│
              │   → CqReport: match/missing/divergent/          │
              │     unsupported-citation, rates, per-regime     │
              └───────────────────────┬─────────────────────────┘
                                      │
              ┌───────────────────────▼─────────────────────────┐
-             │ STAGE 2 · sim.ts + sim-stress.ts — simulation   │
+             │ STAGE 2 · sim.js + sim-stress.js — simulation   │
              │   4 metamorphic relations (seeded sampling)     │
              │   8 mutators × 9 invariants stress matrix       │
              └─────────────────────────────────────────────────┘
@@ -141,20 +152,20 @@ never a suite crash.
 Requires Node >= 22.
 
 ```sh
-npm install        # installs all three workspaces
-npm run build      # compiles packages/core → dist/
-npm test           # builds, then runs the vitest suite in tests/
+npm install        # installs all three workspaces — no build step, ever
+npm run check      # node --check syntax sweep over every source file
+npm test           # runs the vitest suite in tests/ straight from src/
 
-# the four examples (each rebuilds core first)
+# the four examples (node runs the sources directly)
 npm run example:01   # CQ dual-oracle on the clean world → CqReport
 npm run example:02   # metamorphic relations + adversarial stress matrix
 npm run example:03   # plug a custom (deliberately flawed) AnswerPath in
-npm run example:04   # the Effect adapter (memory-sql/effect)
+npm run example:04   # the Effect adapter (memory-sql/effect), from plain JS
 ```
 
 Plain-API usage:
 
-```ts
+```js
 import {
   bindTemplates, fhirCqTemplates, generateWorld, loadFhirOntology,
   makeGraphPath, makeRng, openStore, runCq
@@ -180,13 +191,11 @@ try {
 ### CLI
 
 ```sh
-# dev (tsx, from source)
-npx tsx packages/core/src/cli.ts synth --seed 42 --patients 20 --out world.json
-npx tsx packages/core/src/cli.ts cq    --seed 42 --world world.json -n 50
-npx tsx packages/core/src/cli.ts sim   --seed 42 --mrs 200
-
-# built
-node packages/core/dist/cli.js --help
+# node runs the source directly — no build, no tsx
+node packages/core/src/cli.js synth --seed 42 --patients 20 --out world.json
+node packages/core/src/cli.js cq    --seed 42 --world world.json -n 50
+node packages/core/src/cli.js sim   --seed 42 --mrs 200
+node packages/core/src/cli.js --help
 ```
 
 - `synth` writes a seeded, referentially consistent `InstanceWorld` JSON.
@@ -204,14 +213,14 @@ friendly one-line error, never a stack trace.
 ## The FHIR top-50 ontology
 
 - **Source**: FHIR **R4 (4.0.1)** — the US-payer-mandated version.
-- `scripts/fetch-fhir.ts` downloads `profiles-resources.json` from
+- `scripts/fetch-fhir.js` downloads `profiles-resources.json` from
   `hl7.org/fhir/R4`, extracts the 50 payer-weighted resource
   StructureDefinitions (Patient, Claim, Coverage, ExplanationOfBenefit,
   Encounter, Observation, MedicationRequest, …), trims each to what the
   ontology needs, and writes `packages/core/fhir-data/top50.json`. That file
-  is **committed**, so build, tests, and CI are fully offline; rerun
+  is **committed**, so tests and CI are fully offline; rerun
   `npm run fetch-fhir` to re-derive it from the spec.
-- Flattening rules (documented in `packages/core/src/ontology.ts`, applied
+- Flattening rules (documented in `packages/core/src/ontology.js`, applied
   deterministically by the fetch script): depth-1 elements plus a small
   whitelist of payer-critical backbone leaves; complex types map to fixed
   column sets (`Period → <f>_start/<f>_end`, `Money → <f>_cents/<f>_currency`,
@@ -292,19 +301,18 @@ interface Answer {
 Citations must be `{ entityType, id }` **objects**, not bare id strings — the
 citation audit is a set-membership check against the oracle's support rows,
 so a bare `"condition-006"` never resolves and an otherwise-correct answer is
-graded `unsupported-citation`. (TypeScript catches this; if you call from
-plain JS, mind the shape.)
+graded `unsupported-citation`. (There is no compile-time check on this
+branch — mind the shape; the runtime audit is what convicts a wrong one.)
 
-```ts
-import type { Answer, AnswerPath } from "memory-sql"
+```js
 import {
   bindTemplates, fhirCqTemplates, generateWorld, loadFhirOntology,
   makeRng, openStore, runCq
 } from "memory-sql"
 
-const myPath: AnswerPath = {
+const myPath = {
   name: "my-rag-stack",
-  answer: async (binding): Promise<Answer> => {
+  answer: async (binding) => {
     // call your LLM / vector store / wiki agent here, then e.g.:
     return { kind: "set", value: ["condition-006"], citations: [{ entityType: "Condition", id: "condition-006" }] }
   }
@@ -317,7 +325,7 @@ const store = await openStore()
 const report = await runCq(store, world, bindings, myPath, { ontology })
 ```
 
-**`examples/src/03-custom-answer-path.ts` is the full walkthrough**: it
+**`examples/src/03-custom-answer-path.js` is the full walkthrough**: it
 implements `NotesPath`, a deliberately imperfect "notes file" memory layer,
 and watches memory-sql catch its truncated charts (`divergent`), fabricated
 provenance (`unsupported-citation`), and gaps (`missing`) — without ever
@@ -327,7 +335,7 @@ being told how the layer works.
 
 npm workspaces: `packages/core` is the product (package name `memory-sql`);
 `examples/` and `tests/` are separate private workspaces that depend on it
-**by package name only** and import the published surface (`dist/` via the
+**by package name only** and import the published surface (`src/` via the
 `exports` map) — never `../packages/core/src/...` relative reaches. Both
 consumer workspaces declare their real dependencies (no phantom hoisting).
 Tests test the public API; the examples exercise exactly what a downstream
@@ -341,7 +349,7 @@ examples/           01 dual-oracle · 02 simulation · 03 custom AnswerPath
                     · 04 effect adapter
 tests/              vitest suite over the public API (9 files, incl. the
                     Effect isolation gate and the adapter test)
-scripts/            fetch-fhir.ts (one-time ontology derivation, plain TS)
+scripts/            fetch-fhir.js (one-time ontology derivation, plain JS)
 ```
 
 ## Status & license

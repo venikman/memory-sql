@@ -1,7 +1,7 @@
 /**
  * SPEC v2 mandate #2 — the `memory-sql/effect` adapter.
  *
- * The adapter is the ONE place Effect exists (see isolation.test.ts). This
+ * The adapter is the ONE place Effect exists (see isolation.test.js). This
  * suite proves the wrapping is faithful in both directions: a successful
  * plain-core op becomes an Effect success carrying the same value, and a
  * failing op surfaces on the typed error channel as the tagged
@@ -14,7 +14,6 @@
  */
 import { describe, expect, it } from "vitest"
 import { MemorySqlError as CoreMemorySqlError, loadFhirOntology } from "memory-sql"
-import type { InstanceWorld } from "memory-sql"
 
 // Optional-peer probe: only when `effect` resolves may the adapter be loaded
 // (the adapter imports effect, so importing it without effect would throw for
@@ -46,7 +45,7 @@ if (eff === null || adapter === null) {
     })
 
     it("wraps successful async ops end to end: scoped store -> loadWorld -> query", async () => {
-      const tiny: InstanceWorld = {
+      const tiny = {
         Patient: [
           { id: "patient-1", gender: "female", birth_date: "1980-04-01" },
           { id: "patient-2", gender: "male", birth_date: "1971-11-20" }
@@ -70,7 +69,7 @@ if (eff === null || adapter === null) {
     })
 
     it("provides the MemorySql service through the scoped layer", async () => {
-      const world: InstanceWorld = {
+      const world = {
         Patient: [{ id: "patient-1", gender: "other", birth_date: "1990-01-15" }]
       }
       const program = Effect.flatMap(adapter.MemorySql, (ms) =>
@@ -88,7 +87,7 @@ if (eff === null || adapter === null) {
     it("surfaces a failing op on the typed error channel as the tagged MemorySqlError", async () => {
       // A world keyed by an unknown entity type is rejected by the plain core
       // with op "load"; the adapter must keep that tag, not re-guess it.
-      const poisoned: InstanceWorld = { NotAResource: [{ id: "x-1" }] }
+      const poisoned = { NotAResource: [{ id: "x-1" }] }
       const program = Effect.scoped(
         Effect.flatMap(adapter.openStore(), (store) => adapter.loadWorld(store, ontology, poisoned))
       )

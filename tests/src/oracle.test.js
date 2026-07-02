@@ -8,7 +8,7 @@
  * hand-rolled world plus purpose-built templates and compare against answers
  * computed by hand. The oracle is generic over any ontology, so these
  * templates are fixtures of this test, not the shipped FHIR ones (those are
- * cross-checked against the GraphPath in cq.test.ts).
+ * cross-checked against the GraphPath in cq.test.js).
  */
 import { describe, expect, it } from "vitest"
 import {
@@ -21,10 +21,9 @@ import {
   paramString,
   sqlLiteral
 } from "memory-sql"
-import type { Answer, CqBinding, CqTemplate, InstanceWorld, Store } from "memory-sql"
 
 // ── Tiny world: 3 patients, 4 conditions, 4 EOBs — small enough to grade by eye ──
-const tiny: InstanceWorld = {
+const tiny = {
   Patient: [
     { id: "patient-1", gender: "female" },
     { id: "patient-2", gender: "male" },
@@ -47,9 +46,9 @@ const tiny: InstanceWorld = {
 }
 
 // Fixture templates. `graph` is irrelevant to the SQL oracle; stubbed empty.
-const noGraph: CqTemplate["graph"] = () => []
+const noGraph = () => []
 
-const activeConditions: CqTemplate = {
+const activeConditions = {
   id: "test-active-conditions",
   regime: "point-lookup",
   expectedKind: "set",
@@ -63,7 +62,7 @@ const activeConditions: CqTemplate = {
   graph: noGraph
 }
 
-const totalPaid: CqTemplate = {
+const totalPaid = {
   id: "test-total-paid",
   regime: "aggregate",
   expectedKind: "scalar",
@@ -82,7 +81,7 @@ const totalPaid: CqTemplate = {
   graph: noGraph
 }
 
-const hasActiveCondition: CqTemplate = {
+const hasActiveCondition = {
   id: "test-has-active-condition",
   regime: "point-lookup",
   expectedKind: "boolean",
@@ -95,7 +94,7 @@ const hasActiveCondition: CqTemplate = {
   graph: noGraph
 }
 
-const crossEntity: CqTemplate = {
+const crossEntity = {
   id: "test-cross-entity",
   regime: "cross-entity",
   expectedKind: "set",
@@ -112,13 +111,13 @@ const crossEntity: CqTemplate = {
   graph: noGraph
 }
 
-const bind = (template: CqTemplate, params: CqBinding["params"]): CqBinding => ({
+const bind = (template, params) => ({
   template,
   params
 })
 
 /** Run `f` over a fresh store pre-loaded with the tiny world (tables inferred from rows). */
-const withTinyWorld = async <A>(f: (store: Store) => Promise<A>): Promise<A> => {
+const withTinyWorld = async (f) => {
   const store = await openStore()
   try {
     await loadWorld(store, undefined, tiny)
@@ -129,10 +128,10 @@ const withTinyWorld = async <A>(f: (store: Store) => Promise<A>): Promise<A> => 
 }
 
 /** Load the tiny world and answer all bindings with the SQL oracle. */
-const oracleAnswers = (bindings: ReadonlyArray<CqBinding>): Promise<Answer[]> =>
+const oracleAnswers = (bindings) =>
   withTinyWorld(async (store) => {
     const oracle = makeSqlOracle(store)
-    const answers: Answer[] = []
+    const answers = []
     for (const binding of bindings) {
       answers.push(await oracle.answer(binding))
     }
@@ -180,7 +179,7 @@ describe("oracle: hand-computed answers on a tiny world", () => {
     expect(answer?.value).toBe(0)
     expect(answer?.citations).toEqual([])
     // Verdict semantics depend on this: a 0 total is answerable, not "missing".
-    expect(isEmptyAnswer(answer!)).toBe(false)
+    expect(isEmptyAnswer(answer)).toBe(false)
   })
 
   it("boolean answer: true iff a supporting row exists", async () => {
@@ -219,43 +218,43 @@ describe("oracle: hand-computed answers on a tiny world", () => {
     const [answer] = await oracleAnswers([bind(activeConditions, { patient: "patient-3" })])
     expect(answer?.value).toEqual([])
     expect(answer?.citations).toEqual([])
-    expect(isEmptyAnswer(answer!)).toBe(true)
+    expect(isEmptyAnswer(answer)).toBe(true)
   })
 })
 
 describe("oracle: template-bug surfacing", () => {
   /** Answer one binding, capturing the rejection (a template bug must throw). */
-  const oracleFailure = (binding: CqBinding): Promise<unknown> =>
+  const oracleFailure = (binding) =>
     withTinyWorld((store) =>
       makeSqlOracle(store)
         .answer(binding)
         .then(
           () => null,
-          (cause: unknown) => cause
+          (cause) => cause
         )
     )
 
   it("fails with an op-tagged MemorySqlError when the SQL breaks the support-set convention", async () => {
-    const noIdColumn: CqTemplate = {
+    const noIdColumn = {
       ...activeConditions,
       id: "test-no-id-column",
       sql: () => `SELECT clinical_status FROM condition`
     }
     const error = await oracleFailure(bind(noIdColumn, { patient: "patient-1" }))
     expect(error).toBeInstanceOf(MemorySqlError)
-    expect((error as MemorySqlError).op).toBe("oracle")
-    expect(String((error as MemorySqlError).message)).toMatch(/"id" column/)
+    expect(error.op).toBe("oracle")
+    expect(String(error.message)).toMatch(/"id" column/)
   })
 
   it("fails with an op-tagged MemorySqlError when the query itself is invalid SQL", async () => {
-    const brokenSql: CqTemplate = {
+    const brokenSql = {
       ...activeConditions,
       id: "test-broken-sql",
       sql: () => `SELECT id FROM no_such_table`
     }
     const error = await oracleFailure(bind(brokenSql, { patient: "patient-1" }))
     expect(error).toBeInstanceOf(MemorySqlError)
-    expect((error as MemorySqlError).op).toBe("oracle")
-    expect(String((error as MemorySqlError).message)).toMatch(/oracle query failed/)
+    expect(error.op).toBe("oracle")
+    expect(String(error.message)).toMatch(/oracle query failed/)
   })
 })

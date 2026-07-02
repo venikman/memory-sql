@@ -15,7 +15,6 @@
  * with a pointed MemorySqlError instead.
  */
 import { DuckDBInstance } from "@duckdb/node-api"
-import type { AttributeType, EntityType, Ontology } from "./ontology.js"
 import { getEntityType, MemorySqlError } from "./ontology.js"
 
 // ── Schema mapping (pure) ────────────────────────────────────────────────────
@@ -23,31 +22,30 @@ import { getEntityType, MemorySqlError } from "./ontology.js"
 const NAME_PATTERN = /^[a-z][a-z0-9_]*$/
 
 /** "ExplanationOfBenefit" -> "explanation_of_benefit". */
-export const tableName = (entityTypeName: string): string => entityTypeName.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()
+export const tableName = (entityTypeName) => entityTypeName.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()
 
 /** Attribute name -> column name. Identity, but validated so a malformed ontology can never smuggle SQL. */
-export const columnName = (attributeName: string): string => {
+export const columnName = (attributeName) => {
   if (!NAME_PATTERN.test(attributeName)) throw new MemorySqlError("store", `illegal column name "${attributeName}"`)
   return attributeName
 }
 
 /** Double-quote a validated identifier for generated SQL (reserved-word safety). */
-export const quoteIdent = (name: string): string => `"${columnName(name)}"`
+export const quoteIdent = (name) => `"${columnName(name)}"`
 
 /** Column holding the target row id of a relation. */
-export const relationRefColumn = (relationName: string): string => `${columnName(relationName)}_ref`
+export const relationRefColumn = (relationName) => `${columnName(relationName)}_ref`
 
 /** Column holding the target entity type of a multi-target relation. */
-export const relationRefTypeColumn = (relationName: string): string => `${columnName(relationName)}_ref_type`
+export const relationRefTypeColumn = (relationName) => `${columnName(relationName)}_ref_type`
 
 /** Attribute type -> DuckDB column type (dates are ISO TEXT — see header). */
-export const sqlType = (type: AttributeType): string =>
+export const sqlType = (type) =>
   type === "boolean" ? "BOOLEAN" : type === "integer" ? "INTEGER" : type === "decimal" ? "DOUBLE" : "TEXT"
 
-export interface ColumnDef { readonly name: string; readonly sqlType: string }
-
-/** Full column list of an entity type's table: id first, attributes, then relation columns. */
-export const tableColumns = (entityType: EntityType): readonly ColumnDef[] => [
+/** Full column list of an entity type's table: id first, attributes, then
+ * relation columns. Each entry is a `{ name, sqlType }` column definition. */
+export const tableColumns = (entityType) => [
   { name: "id", sqlType: "TEXT" },
   ...entityType.attributes.map((a) => ({ name: columnName(a.name), sqlType: sqlType(a.type) })),
   ...entityType.relations.flatMap((rel) => [
@@ -56,39 +54,28 @@ export const tableColumns = (entityType: EntityType): readonly ColumnDef[] => [
   ])
 ]
 
-const createTableSql = (table: string, columns: readonly ColumnDef[]): string => {
+const createTableSql = (table, columns) => {
   const body = columns.map((c) => (c.name === "id" ? `"id" TEXT PRIMARY KEY` : `${quoteIdent(c.name)} ${c.sqlType}`)).join(", ")
   return `CREATE TABLE ${quoteIdent(table)} (${body})`
 }
 
 /** CREATE TABLE statement for one entity type; identifiers fully quoted. */
-export const createTable = (entityType: EntityType): string => createTableSql(tableName(entityType.name), tableColumns(entityType))
+export const createTable = (entityType) => createTableSql(tableName(entityType.name), tableColumns(entityType))
 
 /** DDL for the whole ontology — one CREATE TABLE per entity type, in ontology order. */
-export const ddl = (ontology: Ontology): string[] => ontology.entityTypes.map(createTable)
+export const ddl = (ontology) => ontology.entityTypes.map(createTable)
 
 // ── Store (DuckDB, plain async) ──────────────────────────────────────────────
 
-/** The scalar value domain of the store (see the type map above). */
-export type SqlValue = string | number | boolean | null
+// The scalar value domain of the store is string | number | boolean | null
+// (see the type map above). A query result is { columns, rows } with every
+// row normalized into that domain.
 
-export interface QueryResult { readonly columns: readonly string[]; readonly rows: ReadonlyArray<ReadonlyArray<SqlValue>> }
-
-/** `path`: database file path; omit for in-memory (the default). */
-export interface StoreOptions { readonly path?: string }
-
-/** `run` executes for effect (DDL, INSERT); `query` materializes all rows
- * normalized to SqlValue; `close` is idempotent and synchronous. */
-export interface Store {
-  readonly run: (sql: string) => Promise<void>
-  readonly query: (sql: string) => Promise<QueryResult>
-  readonly close: () => void
-}
-
-/** Fold driver values into the SqlValue domain: bigint aggregates (COUNT/SUM)
- * become plain numbers when safely representable — canonical Answers must be
- * plain JSON; other driver objects should not occur with this schema. */
-const toSqlValue = (value: unknown): SqlValue => {
+/** Fold driver values into the store's scalar domain: bigint aggregates
+ * (COUNT/SUM) become plain numbers when safely representable — canonical
+ * Answers must be plain JSON; other driver objects should not occur with this
+ * schema. */
+const toSqlValue = (value) => {
   if (value === null || value === undefined) return null
   switch (typeof value) {
     case "boolean":
@@ -102,15 +89,17 @@ const toSqlValue = (value: unknown): SqlValue => {
   }
 }
 
-const trimSql = (sql: string): string => (sql.length > 200 ? `${sql.slice(0, 200)}…` : sql)
+const trimSql = (sql) => (sql.length > 200 ? `${sql.slice(0, 200)}…` : sql)
 
-/** Open a DuckDB-backed Store. Default is a fresh in-memory database; pass
- * { path } to persist. Single connection: statements run sequentially (the
- * engines do), never raced. */
-export const openStore = async (opts?: StoreOptions): Promise<Store> => {
+/** Open a DuckDB-backed Store `{ run, query, close }`. `run` executes for
+ * effect (DDL, INSERT); `query` materializes all rows normalized to the scalar
+ * domain; `close` is idempotent and synchronous. Default is a fresh in-memory
+ * database; pass { path } to persist. Single connection: statements run
+ * sequentially (the engines do), never raced. */
+export const openStore = async (opts) => {
   const target = opts?.path ?? ":memory:"
-  let instance: DuckDBInstance
-  let connection: Awaited<ReturnType<DuckDBInstance["connect"]>>
+  let instance
+  let connection
   try {
     instance = await DuckDBInstance.create(target)
     connection = await instance.connect()
@@ -145,16 +134,14 @@ export const openStore = async (opts?: StoreOptions): Promise<Store> => {
 
 // ── World loading ────────────────────────────────────────────────────────────
 
-/** One instance row; keys are SQL column names, values the store scalar domain. */
-export type Row = Readonly<Record<string, SqlValue>>
+// An InstanceWorld maps entity type name -> array of rows; a row's keys are
+// SQL column names and its values live in the store's scalar domain. The
+// world is the unit of generation, mutation, and loading.
 
-/** Entity type name -> rows. The unit of generation, mutation, and loading. */
-export interface InstanceWorld { readonly [entityType: string]: ReadonlyArray<Row> }
-
-/** Render a SqlValue as a SQL literal. Strings are single-quoted with quote
+/** Render a scalar as a SQL literal. Strings are single-quoted with quote
  * doubling; non-finite numbers degrade to NULL (the clean generator never
  * produces them; mutated worlds must still load so invariants can fire). */
-export const sqlLiteral = (value: SqlValue): string => {
+export const sqlLiteral = (value) => {
   if (value === null) return "NULL"
   if (typeof value === "boolean") return value ? "TRUE" : "FALSE"
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : "NULL"
@@ -164,11 +151,11 @@ export const sqlLiteral = (value: SqlValue): string => {
 const INSERT_CHUNK = 500
 
 /** JS type the store expects for a SQL column type (dates are ISO TEXT). */
-const jsTypeFor = (sqlType: string): "string" | "number" | "boolean" =>
+const jsTypeFor = (sqlType) =>
   sqlType === "BOOLEAN" ? "boolean" : sqlType === "INTEGER" || sqlType === "DOUBLE" ? "number" : "string"
 
 /** First value whose JS type contradicts its ontology column type, or null (see file header). */
-const findTypeMismatch = (typeName: string, rows: ReadonlyArray<Row>, columns: ReadonlyArray<ColumnDef>): string | null => {
+const findTypeMismatch = (typeName, rows, columns) => {
   for (const row of rows) {
     for (const column of columns) {
       const value = row[column.name]
@@ -188,8 +175,8 @@ const findTypeMismatch = (typeName: string, rows: ReadonlyArray<Row>, columns: R
 
 /** Infer a column layout from rows when no ontology is supplied: id first, then
  * every key in first-seen order, typed by the first non-null value observed. */
-const inferColumns = (rows: ReadonlyArray<Row>): ColumnDef[] => {
-  const names: string[] = ["id"]
+const inferColumns = (rows) => {
+  const names = ["id"]
   const seen = new Set(names)
   for (const row of rows) {
     for (const key of Object.keys(row)) {
@@ -222,10 +209,10 @@ const inferColumns = (rows: ReadonlyArray<Row>): ColumnDef[] => {
  * implicit casts). With `undefined`, tables are inferred from the rows
  * (hand-rolled fixture worlds in tests).
  */
-export const loadWorld = async (store: Store, ontology: Ontology | undefined, world: InstanceWorld): Promise<void> => {
+export const loadWorld = async (store, ontology, world) => {
   const worldTypes = Object.keys(world)
   // Table name -> ordered column list, driving both DDL and inserts.
-  const layouts = new Map<string, readonly ColumnDef[]>()
+  const layouts = new Map()
   if (ontology !== undefined) {
     for (const t of worldTypes) {
       const et = getEntityType(ontology, t)

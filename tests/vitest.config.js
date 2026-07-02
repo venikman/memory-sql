@@ -2,12 +2,13 @@ import { defineConfig } from "vitest/config"
 
 /**
  * Test-suite policy per SPEC: tests exercise ONLY the published "memory-sql"
- * surface (the workspace dependency resolves to the built package), run fully
- * offline, and are deterministic (fixed seeds everywhere — no retries needed).
+ * surface (the workspace dependency resolves to the package sources), run
+ * fully offline, and are deterministic (fixed seeds everywhere — no retries
+ * needed).
  */
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.js"],
     // DuckDB is a native addon; child-process forks isolate it more reliably
     // than worker threads when several suites each open their own database.
     pool: "forks",

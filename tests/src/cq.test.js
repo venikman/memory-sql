@@ -24,16 +24,8 @@ import {
   openStore,
   runCq
 } from "memory-sql"
-import type {
-  Answer,
-  AnswerPath,
-  CqBinding,
-  CqRegime,
-  CqReport,
-  Ontology
-} from "memory-sql"
 
-const ontology: Ontology = loadFhirOntology()
+const ontology = loadFhirOntology()
 const world = generateWorld(ontology, { seed: 42, patients: 10 })
 const graphPath = makeGraphPath(world, ontology)
 
@@ -42,7 +34,7 @@ const SUITE_SIZE = fhirCqTemplates.length * 3
 const bindings = bindTemplates(fhirCqTemplates, world, makeRng(7), SUITE_SIZE)
 
 /** Load the world and grade `path` against the SQL oracle over all bindings. */
-const suite = async (path: AnswerPath): Promise<CqReport> => {
+const suite = async (path) => {
   const store = await openStore()
   try {
     return await runCq(store, world, bindings, path, { ontology })
@@ -59,13 +51,12 @@ describe("cq: binding sampler", () => {
     expect(sampledTemplates.size).toBe(fhirCqTemplates.length)
     // Same seed, same world -> the identical suite.
     const again = bindTemplates(fhirCqTemplates, world, makeRng(7), SUITE_SIZE)
-    const view = (bs: ReadonlyArray<CqBinding>) =>
-      bs.map((b) => ({ id: b.template.id, params: b.params }))
+    const view = (bs) => bs.map((b) => ({ id: b.template.id, params: b.params }))
     expect(view(again)).toEqual(view(bindings))
   })
 
   it("ships all five question regimes, including negative controls", () => {
-    const regimes = new Set<CqRegime>(fhirCqTemplates.map((t) => t.regime))
+    const regimes = new Set(fhirCqTemplates.map((t) => t.regime))
     expect([...regimes].sort()).toEqual(
       ["aggregate", "cross-entity", "negative-control", "point-lookup", "temporal"].sort()
     )
@@ -126,7 +117,7 @@ describe("cq: broken AnswerPaths get the right verdicts", () => {
   it("wrong values -> divergent on every binding", async () => {
     // Corrupt each kind minimally but surely: sets gain a fabricated member,
     // scalars drift by one cent, booleans flip. Never empty -> never `missing`.
-    const corrupt = (a: Answer): Answer => {
+    const corrupt = (a) => {
       if (a.kind === "set" && Array.isArray(a.value)) {
         return { ...a, value: [...a.value, "fabricated-row-999"] }
       }
@@ -135,7 +126,7 @@ describe("cq: broken AnswerPaths get the right verdicts", () => {
       }
       return { ...a, value: a.value !== true }
     }
-    const wrongValues: AnswerPath = {
+    const wrongValues = {
       name: "broken-wrong-values",
       answer: async (binding) => corrupt(await graphPath.answer(binding))
     }
@@ -148,7 +139,7 @@ describe("cq: broken AnswerPaths get the right verdicts", () => {
   it("fabricated citations -> unsupported-citation on every binding", async () => {
     // Values stay exactly right; only the provenance is a lie. The verdict
     // must catch it mechanically (citation not in the oracle's support set).
-    const fakeCitations: AnswerPath = {
+    const fakeCitations = {
       name: "broken-fake-citations",
       answer: async (binding) => {
         const a = await graphPath.answer(binding)
@@ -162,7 +153,7 @@ describe("cq: broken AnswerPaths get the right verdicts", () => {
   })
 
   it("a path that cannot answer -> missing on every binding", async () => {
-    const mute: AnswerPath = {
+    const mute = {
       name: "broken-mute",
       answer: () => Promise.reject(new Error("no memory layer attached"))
     }
@@ -182,11 +173,11 @@ describe("cq: the 0-binding gate", () => {
     try {
       const failure = await runCq(store, world, [], graphPath, { ontology }).then(
         () => null,
-        (cause: unknown) => cause
+        (cause) => cause
       )
       expect(failure).toBeInstanceOf(MemorySqlError)
-      expect((failure as MemorySqlError).op).toBe("cq")
-      expect((failure as MemorySqlError).message).toMatch(/0 bindings/)
+      expect(failure.op).toBe("cq")
+      expect(failure.message).toMatch(/0 bindings/)
     } finally {
       store.close()
     }

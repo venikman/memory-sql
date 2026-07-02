@@ -1,7 +1,7 @@
 /**
  * Stage 1 — the CQ dual oracle. A competency question is a parametrized
  * template answered two independent ways — the SQL oracle (ground truth,
- * oracle.ts) and a pluggable AnswerPath — then graded with the four-way
+ * oracle.js) and a pluggable AnswerPath — then graded with the four-way
  * verdict. This module owns the canonical Answer form + verdict rules, the 13
  * FHIR templates (ALL FHIR knowledge lives here; the engines are
  * ontology-generic), `bindTemplates` (Monte-Carlo sampling from the ACTUAL
@@ -14,41 +14,31 @@
  * exactly once.
  */
 import { answerFromSupport, canonicalCitations, makeSqlOracle } from "./oracle.js"
-import type { Oracle } from "./oracle.js"
 import { MemorySqlError, getEntityType } from "./ontology.js"
-import type { Ontology, Relation } from "./ontology.js"
 import { REFERENCE_DATE, formatIsoDate, parseIsoDays } from "./rng.js"
-import type { Rng } from "./rng.js"
 import { loadWorld, relationRefColumn, relationRefTypeColumn, sqlLiteral } from "./store.js"
-import type { InstanceWorld, Row, Store } from "./store.js"
 
 // ── Answers, citations, verdicts ─────────────────────────────────────────────
 
-/** Question regimes — each stresses a different retrieval competency. */
-export type CqRegime = "point-lookup" | "cross-entity" | "aggregate" | "temporal" | "negative-control"
+/** Question regimes — each stresses a different retrieval competency. Fixed
+ * presentation order for per-regime breakdowns. */
+export const CQ_REGIMES = ["point-lookup", "cross-entity", "aggregate", "temporal", "negative-control"]
 
-/** Fixed presentation order for per-regime breakdowns. */
-const CQ_REGIMES: ReadonlyArray<CqRegime> = ["point-lookup", "cross-entity", "aggregate", "temporal", "negative-control"]
+/** The answer kinds a template can expect. */
+export const ANSWER_KINDS = ["set", "scalar", "boolean"]
 
-export type AnswerKind = "set" | "scalar" | "boolean"
-
-/** A citation names the exact stored row that supports (part of) an answer. */
-export interface Citation { readonly entityType: string; readonly id: string }
-
-export type ScalarValue = number | string | boolean | null
-
-/** 'set' answers are sorted unique row ids; 'scalar'/'boolean' are single values. */
-export type AnswerValue = ReadonlyArray<string> | ScalarValue
-
-export interface Answer { readonly kind: AnswerKind; readonly value: AnswerValue; readonly citations: ReadonlyArray<Citation> }
-
-/** One supporting row, with an optional numeric contribution for scalar answers. */
-export interface SupportRow { readonly entityType: string; readonly id: string; readonly value?: number }
+/**
+ * An Answer is `{ kind, value, citations }`: 'set' answers carry sorted unique
+ * row ids as `value`; 'scalar'/'boolean' answers carry a single value. A
+ * citation `{ entityType, id }` names the exact stored row that supports
+ * (part of) the answer. A support row is a citation with an optional numeric
+ * `value` contribution for scalar answers.
+ */
 
 /** Normalize an Answer into canonical form (set values + citations deduped and
  * sorted). Idempotent; applied before any verdict math so plug-in paths are not
  * penalized for row ordering. */
-export const canonicalizeAnswer = (answer: Answer): Answer => {
+export const canonicalizeAnswer = (answer) => {
   const citations = canonicalCitations(answer.citations)
   if (answer.kind === "set" && Array.isArray(answer.value)) {
     return { kind: answer.kind, value: [...new Set(answer.value.map(String))].sort(), citations }
@@ -56,16 +46,17 @@ export const canonicalizeAnswer = (answer: Answer): Answer => {
   return { kind: answer.kind, value: answer.value, citations }
 }
 
-export type Verdict = "match" | "missing" | "divergent" | "unsupported-citation"
+/** The four-way verdict values computeVerdict can return. */
+export const VERDICTS = ["match", "missing", "divergent", "unsupported-citation"]
 
 /** "The path returned nothing": empty set, or a null scalar. Booleans are never
  * empty — a wrong `false` is divergent, not missing; a scalar `0` is a claim. */
-export const isEmptyAnswer = (answer: Answer): boolean =>
+export const isEmptyAnswer = (answer) =>
   answer.kind === "set" ? Array.isArray(answer.value) && answer.value.length === 0 : answer.kind === "scalar" && answer.value === null
 
 /** Structural value equality over canonicalized answers (kind mismatch = unequal;
  * Object.is on scalars/booleans — no string coercion). */
-export const answerValuesEqual = (a: Answer, b: Answer): boolean => {
+export const answerValuesEqual = (a, b) => {
   if (a.kind !== b.kind) return false
   if (a.kind === "set") {
     const av = a.value
@@ -78,13 +69,13 @@ export const answerValuesEqual = (a: Answer, b: Answer): boolean => {
 
 /** Path citations that do NOT participate in the oracle's support set. The oracle's
  * citations ARE its support set, so containment IS the mechanical citation audit. */
-const unsupportedCitations = (oracle: Answer, path: Answer): Citation[] =>
+const unsupportedCitations = (oracle, path) =>
   path.citations.filter((c) => !oracle.citations.some((o) => o.entityType === c.entityType && o.id === c.id))
 
 /** Four-way verdict per SPEC (inputs canonicalized defensively). Order matters: an
  * empty path answer against a non-empty oracle is `missing` even though the values
  * also differ — failing to answer is diagnostically different from answering wrongly. */
-export const computeVerdict = (oracle: Answer, path: Answer): Verdict => {
+export const computeVerdict = (oracle, path) => {
   const o = canonicalizeAnswer(oracle)
   const p = canonicalizeAnswer(path)
   if (isEmptyAnswer(p) && !isEmptyAnswer(o)) return "missing"
@@ -92,66 +83,55 @@ export const computeVerdict = (oracle: Answer, path: Answer): Verdict => {
   return unsupportedCitations(o, p).length > 0 ? "unsupported-citation" : "match"
 }
 
-// ── Stable answer-value keys (shared with sim.ts, which must grade exactly as
+// ── Stable answer-value keys (shared with sim.js, which must grade exactly as
 // strictly as computeVerdict — order-insensitive sets, no type coercion) ─────
 
 /** Recursive key-sorted serialization (a JSON.stringify replacer ARRAY would
  * filter nested keys down to the top-level key set — never use one here). */
-const stableStringify = (value: unknown): string => {
+const stableStringify = (value) => {
   if (value === null || value === undefined) return "null"
   if (typeof value === "string") return JSON.stringify(value)
   if (typeof value === "number" || typeof value === "boolean") return String(value)
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`
-  const rec = value as Record<string, unknown>
-  return `{${Object.keys(rec).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(rec[key])}`).join(",")}}`
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`
 }
 
 /** Type-tagged so `3500`, `"3500"`, `true` and `"true"` never collide. */
-export const stableKey = (el: unknown): string => {
+export const stableKey = (el) => {
   if (el === null || el === undefined) return "null"
   if (typeof el === "string") return `s:${el}`
   if (typeof el === "number") return `n:${String(el)}`
   if (typeof el === "boolean") return `b:${String(el)}`
   if (Array.isArray(el)) return `[${el.map(stableKey).join(",")}]`
-  const rec = el as Record<string, unknown>
   // Citation-shaped / row-shaped elements identify by (entityType, id).
-  if (typeof rec["id"] === "string") return `${typeof rec["entityType"] === "string" ? rec["entityType"] : ""}:${rec["id"]}`
-  return stableStringify(rec)
+  if (typeof el["id"] === "string") return `${typeof el["entityType"] === "string" ? el["entityType"] : ""}:${el["id"]}`
+  return stableStringify(el)
 }
 
 /** Render an answer value as a stable, order-insensitive string (reports). */
-export const canonicalValue = (value: unknown): string =>
+export const canonicalValue = (value) =>
   Array.isArray(value) ? value.map(stableKey).sort().join("; ") : stableKey(value)
 
 // ── Templates, parameters, bindings ──────────────────────────────────────────
 
-/** A closed date interval, ISO YYYY-MM-DD on both ends (TEXT-comparable). */
-export interface Period { readonly start: string; readonly end: string }
+// A period parameter is a closed date interval `{ start, end }`, ISO
+// YYYY-MM-DD on both ends (TEXT-comparable). A param spec tells the sampler
+// how to fill one template parameter (real ids/values, or the product's date
+// range): { name, kind: "entity-id", entityType } | { name, kind:
+// "attribute-value", entityType, attribute } | { name, kind: "date"|"period",
+// min?, max? }. A binding is a template bound to concrete parameter values —
+// the unit both oracles answer.
 
-export type ParamValue = string | Period
-
-export const isPeriod = (value: ParamValue): value is Period => typeof value !== "string"
-
-/** How the sampler fills one template parameter (real ids/values, or the product's date range). */
-export type ParamSpec =
-  | { readonly name: string; readonly kind: "entity-id"; readonly entityType: string }
-  | { readonly name: string; readonly kind: "attribute-value"; readonly entityType: string; readonly attribute: string }
-  | { readonly name: string; readonly kind: "date"; readonly min?: string; readonly max?: string }
-  | { readonly name: string; readonly kind: "period"; readonly min?: string; readonly max?: string }
-
-export type CqParams = Readonly<Record<string, ParamValue>>
-
-/** A template bound to concrete parameter values — the unit both oracles answer. */
-export interface CqBinding { readonly template: CqTemplate; readonly params: CqParams }
+export const isPeriod = (value) => typeof value !== "string"
 
 /** Copy of a binding with one parameter replaced (metamorphic transforms use this). */
-export const withParam = (binding: CqBinding, name: string, value: ParamValue): CqBinding => ({
+export const withParam = (binding, name, value) => ({
   template: binding.template,
   params: { ...binding.params, [name]: value }
 })
 
 /** Read a string parameter; throwing here is a template-configuration bug. */
-export const paramString = (binding: CqBinding, name: string): string => {
+export const paramString = (binding, name) => {
   const value = binding.params[name]
   if (typeof value !== "string") {
     throw new MemorySqlError("cq", `template "${binding.template.id}": parameter "${name}" is ${value === undefined ? "missing" : "not a string"}`)
@@ -160,7 +140,7 @@ export const paramString = (binding: CqBinding, name: string): string => {
 }
 
 /** Read a period parameter; throwing here is a template-configuration bug. */
-export const paramPeriod = (binding: CqBinding, name: string): Period => {
+export const paramPeriod = (binding, name) => {
   const value = binding.params[name]
   if (value === undefined || typeof value === "string") {
     throw new MemorySqlError("cq", `template "${binding.template.id}": parameter "${name}" is ${value === undefined ? "missing" : "not a period"}`)
@@ -168,81 +148,67 @@ export const paramPeriod = (binding: CqBinding, name: string): Period => {
   return value
 }
 
-/** A row tagged with its entity type — the node of the typed instance graph. */
-export interface GraphNode { readonly entityType: string; readonly row: Row }
+// A graph node is a row tagged with its entity type: `{ entityType, row }`.
+// The GraphView built by makeWorldGraph is the typed traversal over an
+// in-memory InstanceWorld: `nodes(type)`, `node(type, id)`, `follow(node,
+// relation)` (undefined on null/dangling refs), and `incoming(sourceType,
+// relation, target)` — the reverse lookup. The ontology drives the typing:
+// single-target relations resolve via their declared target, multi-target
+// ones via the `<relation>_ref_type` column.
 
-/** Typed traversal over an in-memory InstanceWorld. The ontology drives the
- * typing: single-target relations resolve via their declared target, multi-target
- * ones via the `<relation>_ref_type` column. `follow` returns undefined on
- * null/dangling refs; `incoming` is the reverse lookup. */
-export interface GraphView {
-  readonly nodes: (entityType: string) => ReadonlyArray<GraphNode>
-  readonly node: (entityType: string, id: string) => GraphNode | undefined
-  readonly follow: (node: GraphNode, relation: string) => GraphNode | undefined
-  readonly incoming: (sourceType: string, relation: string, target: GraphNode) => ReadonlyArray<GraphNode>
-}
-
-/** A competency question template. `sql` compiles the binding to the oracle's
- * ground-truth SQL (support-set convention in oracle.ts); `graph` computes the
- * same support set by typed traversal — the reference AnswerPath executes it.
- * `resultEntityType` types supporting rows when the SQL result has no
- * entity_type column. */
-export interface CqTemplate {
-  readonly id: string
-  readonly regime: CqRegime
-  readonly expectedKind: AnswerKind
-  readonly resultEntityType: string
-  readonly params: ReadonlyArray<ParamSpec>
-  readonly text: (binding: CqBinding) => string
-  readonly sql: (binding: CqBinding) => string
-  readonly graph: (graph: GraphView, binding: CqBinding) => ReadonlyArray<SupportRow>
-}
+// A competency question template is
+//   { id, regime, expectedKind, resultEntityType, params, text, sql, graph }:
+// `sql(binding)` compiles the binding to the oracle's ground-truth SQL
+// (support-set convention in oracle.js); `graph(graphView, binding)` computes
+// the same support set by typed traversal — the reference AnswerPath executes
+// it. `resultEntityType` types supporting rows when the SQL result has no
+// entity_type column.
 
 // ── The 13 shipped FHIR templates (3 point-lookup, 2 temporal, 4 cross-entity,
 // 2 aggregate, 2 negative-control). "Denied claim" = Claim whose ClaimResponse
 // has outcome 'error'; "prescribing practitioner" = MedicationRequest.recorder.
 
-const PATIENT: ParamSpec = { name: "patient", kind: "entity-id", entityType: "Patient" }
-const PERIOD: ParamSpec = { name: "period", kind: "period" }
+const PATIENT = { name: "patient", kind: "entity-id", entityType: "Patient" }
+const PERIOD = { name: "period", kind: "period" }
 
-const pid = (b: CqBinding): string => sqlLiteral(paramString(b, "patient"))
+const pid = (b) => sqlLiteral(paramString(b, "patient"))
 
-const supportOf = (node: GraphNode): SupportRow => ({ entityType: node.entityType, id: String(node.row["id"] ?? "") })
+const supportOf = (node) => ({ entityType: node.entityType, id: String(node.row["id"] ?? "") })
 
 /** Resolve the bound patient node and apply `f`; missing patient = empty support. */
-const forPatient = (g: GraphView, b: CqBinding, f: (patient: GraphNode) => ReadonlyArray<SupportRow>): ReadonlyArray<SupportRow> => {
+const forPatient = (g, b, f) => {
   const patient = g.node("Patient", paramString(b, "patient"))
   return patient === undefined ? [] : f(patient)
 }
 
 /** Graph plan shared by most templates: the patient's incoming rows of one type, filtered. */
 const incomingWhere =
-  (type: string, rel: string, pred: (n: GraphNode, b: CqBinding, g: GraphView) => boolean) =>
-  (g: GraphView, b: CqBinding): ReadonlyArray<SupportRow> =>
+  (type, rel, pred) =>
+  (g, b) =>
     forPatient(g, b, (p) => g.incoming(type, rel, p).filter((n) => pred(n, b, g)).map(supportOf))
 
 /** Present-and-in-range check mirroring SQL `col >= start AND col <= end`. */
-const inPeriod = (value: unknown, start: string, end: string): value is string =>
+const inPeriod = (value, start, end) =>
   typeof value === "string" && value >= start && value <= end
 
 /** A code the synthetic generator can never emit (open code pools are `<attr>-1..6`). */
 const NONEXISTENT_CODE = "code-999"
 
-const activeConditions: CqTemplate = {
+const activeConditions = {
   id: "active-conditions", regime: "point-lookup", expectedKind: "set", resultEntityType: "Condition", params: [PATIENT],
   text: (b) => `Which conditions of patient ${paramString(b, "patient")} are clinically active?`,
   sql: (b) => `SELECT id FROM condition WHERE subject_ref = ${pid(b)} AND subject_ref_type = 'Patient' AND clinical_status = 'active'`,
   graph: incomingWhere("Condition", "subject", (n) => n.row["clinical_status"] === "active")
 }
 
-const completedImmunizations: CqTemplate = {
+const completedImmunizations = {
   id: "completed-immunizations", regime: "point-lookup", expectedKind: "set", resultEntityType: "Immunization", params: [PATIENT],
   text: (b) => `Which immunizations were completed for patient ${paramString(b, "patient")}?`,
   sql: (b) => `SELECT id FROM immunization WHERE patient_ref = ${pid(b)} AND status = 'completed'`,
   graph: incomingWhere("Immunization", "patient", (n) => n.row["status"] === "completed")
 }
 
-const activeAllergyToCode: CqTemplate = {
+const activeAllergyToCode = {
   id: "active-allergy-to-code", regime: "point-lookup", expectedKind: "boolean", resultEntityType: "AllergyIntolerance",
   params: [PATIENT, { name: "code", kind: "attribute-value", entityType: "AllergyIntolerance", attribute: "code" }],
   text: (b) => `Does patient ${paramString(b, "patient")} have an active allergy or intolerance to code "${paramString(b, "code")}"?`,
@@ -251,7 +217,7 @@ const activeAllergyToCode: CqTemplate = {
   graph: incomingWhere("AllergyIntolerance", "patient", (n, b) => n.row["clinical_status"] === "active" && n.row["code"] === paramString(b, "code"))
 }
 
-const observationsInPeriod: CqTemplate = {
+const observationsInPeriod = {
   id: "observations-in-period", regime: "temporal", expectedKind: "set", resultEntityType: "Observation", params: [PATIENT, PERIOD],
   text: (b) => {
     const { start, end } = paramPeriod(b, "period")
@@ -267,7 +233,7 @@ const observationsInPeriod: CqTemplate = {
   })
 }
 
-const activeCoverageOnDate: CqTemplate = {
+const activeCoverageOnDate = {
   id: "active-coverage-on-date", regime: "temporal", expectedKind: "set", resultEntityType: "Coverage",
   params: [PATIENT, { name: "date", kind: "date" }],
   text: (b) => `Which coverages of patient ${paramString(b, "patient")} were active on ${paramString(b, "date")}?`,
@@ -286,7 +252,7 @@ const activeCoverageOnDate: CqTemplate = {
   })
 }
 
-const deniedClaims: CqTemplate = {
+const deniedClaims = {
   id: "denied-claims", regime: "cross-entity", expectedKind: "set", resultEntityType: "Claim", params: [PATIENT],
   text: (b) => `Which claims of patient ${paramString(b, "patient")} were denied (claim response outcome 'error')?`,
   sql: (b) =>
@@ -294,7 +260,7 @@ const deniedClaims: CqTemplate = {
   graph: incomingWhere("Claim", "patient", (claim, _b, g) => g.incoming("ClaimResponse", "request", claim).some((r) => r.row["outcome"] === "error"))
 }
 
-const medicationRequestsWithMedications: CqTemplate = {
+const medicationRequestsWithMedications = {
   id: "medication-requests-with-medications", regime: "cross-entity", expectedKind: "set", resultEntityType: "MedicationRequest",
   params: [PATIENT],
   text: (b) => `Which medication requests exist for patient ${paramString(b, "patient")}, and which medications do they order?`,
@@ -314,7 +280,7 @@ const medicationRequestsWithMedications: CqTemplate = {
     })
 }
 
-const encountersAtOrganization: CqTemplate = {
+const encountersAtOrganization = {
   id: "encounters-at-organization", regime: "cross-entity", expectedKind: "set", resultEntityType: "Encounter",
   params: [PATIENT, { name: "organization", kind: "entity-id", entityType: "Organization" }],
   text: (b) => `Which encounters did patient ${paramString(b, "patient")} have at organization ${paramString(b, "organization")}?`,
@@ -325,7 +291,7 @@ const encountersAtOrganization: CqTemplate = {
   graph: incomingWhere("Encounter", "subject", (n, b) => n.row["service_provider_ref"] === paramString(b, "organization"))
 }
 
-const practitionersRecordingMedicationRequests: CqTemplate = {
+const practitionersRecordingMedicationRequests = {
   id: "practitioners-recording-medication-requests", regime: "cross-entity", expectedKind: "set", resultEntityType: "Practitioner",
   params: [PATIENT],
   text: (b) => `Which practitioners recorded medication requests for patient ${paramString(b, "patient")}?`,
@@ -342,7 +308,7 @@ const practitionersRecordingMedicationRequests: CqTemplate = {
     )
 }
 
-const eobPaidTotalInPeriod: CqTemplate = {
+const eobPaidTotalInPeriod = {
   id: "eob-paid-total-in-period", regime: "aggregate", expectedKind: "scalar", resultEntityType: "ExplanationOfBenefit",
   params: [PATIENT, PERIOD],
   text: (b) => {
@@ -367,7 +333,7 @@ const eobPaidTotalInPeriod: CqTemplate = {
     })
 }
 
-const encounterCount: CqTemplate = {
+const encounterCount = {
   id: "encounter-count", regime: "aggregate", expectedKind: "scalar", resultEntityType: "Encounter", params: [PATIENT],
   text: (b) => `How many encounters does patient ${paramString(b, "patient")} have on record?`,
   sql: (b) => `SELECT id, 1 AS value FROM encounter WHERE subject_ref = ${pid(b)} AND subject_ref_type = 'Patient'`,
@@ -378,7 +344,7 @@ const encounterCount: CqTemplate = {
 // Negative controls — the clean world provably contains no matching rows, so
 // the only correct answer is empty; anything else is fabrication.
 
-const ncFutureEncounters: CqTemplate = {
+const ncFutureEncounters = {
   id: "nc-future-encounters", regime: "negative-control", expectedKind: "set", resultEntityType: "Encounter", params: [PATIENT],
   text: (b) => `Which encounters of patient ${paramString(b, "patient")} start after ${REFERENCE_DATE} (i.e. in the future)?`,
   // the generator draws every period_start strictly before REFERENCE_DATE
@@ -390,7 +356,7 @@ const ncFutureEncounters: CqTemplate = {
   })
 }
 
-const ncUnknownAllergyCode: CqTemplate = {
+const ncUnknownAllergyCode = {
   id: "nc-unknown-allergy-code", regime: "negative-control", expectedKind: "set", resultEntityType: "AllergyIntolerance",
   params: [PATIENT],
   text: (b) => `Which allergy or intolerance records of patient ${paramString(b, "patient")} carry the code "${NONEXISTENT_CODE}"?`,
@@ -399,7 +365,7 @@ const ncUnknownAllergyCode: CqTemplate = {
 }
 
 /** The shipped suite: 13 templates spanning all five regimes. */
-export const fhirCqTemplates: ReadonlyArray<CqTemplate> = [
+export const fhirCqTemplates = [
   activeConditions, completedImmunizations, activeAllergyToCode, observationsInPeriod, activeCoverageOnDate,
   deniedClaims, medicationRequestsWithMedications, encountersAtOrganization, practitionersRecordingMedicationRequests,
   eobPaidTotalInPeriod, encounterCount, ncFutureEncounters, ncUnknownAllergyCode
@@ -407,13 +373,13 @@ export const fhirCqTemplates: ReadonlyArray<CqTemplate> = [
 
 // ── Monte-Carlo binding sampler (pure civil-day arithmetic — no Date) ────────
 
-const isoDays = (iso: string): number => {
+const isoDays = (iso) => {
   const days = parseIsoDays(iso)
   if (days === null) throw new MemorySqlError("cq", `invalid ISO date "${iso}" in a template's date range`)
   return days
 }
 
-const sampleDate = (min: string, max: string, rng: Rng): string => {
+const sampleDate = (min, max, rng) => {
   const from = isoDays(min)
   return formatIsoDate(from + rng.int(0, Math.max(0, isoDays(max) - from)))
 }
@@ -422,10 +388,10 @@ const sampleDate = (min: string, max: string, rng: Rng): string => {
 const DEFAULT_MIN_DATE = "2020-01-01"
 const DEFAULT_MAX_PERIOD_START = "2025-12-31"
 
-const sampleParam = (spec: ParamSpec, world: InstanceWorld, rng: Rng): ParamValue | undefined => {
+const sampleParam = (spec, world, rng) => {
   switch (spec.kind) {
     case "entity-id": {
-      const ids: string[] = []
+      const ids = []
       for (const row of world[spec.entityType] ?? []) {
         if (typeof row["id"] === "string") ids.push(row["id"])
       }
@@ -435,7 +401,7 @@ const sampleParam = (spec: ParamSpec, world: InstanceWorld, rng: Rng): ParamValu
       // Frequency-weighted pick from real data; a world with no value at all
       // falls back to the generator's first pool code so the binding stays
       // askable (both oracles then agree on an empty answer).
-      const values: string[] = []
+      const values = []
       for (const row of world[spec.entityType] ?? []) {
         const v = row[spec.attribute]
         if (v !== null && v !== undefined) values.push(String(v))
@@ -458,12 +424,12 @@ const sampleParam = (spec: ParamSpec, world: InstanceWorld, rng: Rng): ParamValu
  * from the world via the seeded rng. A binding whose parameters cannot be sampled
  * (an entity type with no rows) is skipped, so the result may be shorter than `n`
  * on degenerate worlds — never on generated ones. */
-export const bindTemplates = (templates: ReadonlyArray<CqTemplate>, world: InstanceWorld, rng: Rng, n: number): ReadonlyArray<CqBinding> => {
-  const bindings: CqBinding[] = []
+export const bindTemplates = (templates, world, rng, n) => {
+  const bindings = []
   if (templates.length === 0) return bindings
   for (let i = 0; i < n; i++) {
-    const template = templates[i % templates.length] as CqTemplate
-    const params: Record<string, ParamValue> = {}
+    const template = templates[i % templates.length]
+    const params = {}
     let complete = true
     for (const spec of template.params) {
       const value = sampleParam(spec, world, rng)
@@ -473,46 +439,43 @@ export const bindTemplates = (templates: ReadonlyArray<CqTemplate>, world: Insta
       }
       params[spec.name] = value
     }
-    if (complete) bindings.push({ template, params: params as CqParams })
+    if (complete) bindings.push({ template, params })
   }
   return bindings
 }
 
 // ── GraphPath — the reference AnswerPath (typed reference-walk, SQL-free) ────
 
-/** The pluggable answer layer under test: any knowledge/memory/retrieval layer
- * implements `answer(binding)` and memory-sql grades it against the SQL oracle.
- * A rejected promise is recorded as an unanswered question (verdict `missing`),
- * never a suite crash. */
-export interface AnswerPath {
-  readonly name: string
-  readonly answer: (binding: CqBinding) => Promise<Answer>
-}
+// The pluggable answer layer under test is an AnswerPath `{ name,
+// answer(binding) -> Promise<Answer> }`: any knowledge/memory/retrieval layer
+// implements it and memory-sql grades it against the SQL oracle. A rejected
+// promise is recorded as an unanswered question (verdict `missing`), never a
+// suite crash.
 
 /** Index an InstanceWorld as a typed graph. Dangling references simply fail to
  * resolve (follow -> undefined) rather than throwing: on mutated stress worlds
  * the graph must stay walkable so the *engines* can observe the corruption. */
-const makeWorldGraph = (world: InstanceWorld, ontology: Ontology): GraphView => {
-  const nodesByType = new Map<string, GraphNode[]>()
-  const byId = new Map<string, Map<string, GraphNode>>()
+const makeWorldGraph = (world, ontology) => {
+  const nodesByType = new Map()
+  const byId = new Map()
   for (const [entityType, rows] of Object.entries(world)) {
-    const nodes: GraphNode[] = rows.map((row) => ({ entityType, row }))
-    nodesByType.set(entityType, nodes)
-    const index = new Map<string, GraphNode>()
-    for (const node of nodes) {
+    const typeNodes = rows.map((row) => ({ entityType, row }))
+    nodesByType.set(entityType, typeNodes)
+    const index = new Map()
+    for (const node of typeNodes) {
       if (typeof node.row["id"] === "string") index.set(node.row["id"], node)
     }
     byId.set(entityType, index)
   }
 
   /** Relation metadata drives the typing; an undeclared relation is a template bug. */
-  const relationOf = (entityType: string, relation: string): Relation => {
+  const relationOf = (entityType, relation) => {
     const found = getEntityType(ontology, entityType)?.relations.find((r) => r.name === relation)
     if (found === undefined) throw new MemorySqlError("cq", `graph traversal: unknown relation ${entityType}.${relation}`)
     return found
   }
 
-  const nodes = (entityType: string): ReadonlyArray<GraphNode> => nodesByType.get(entityType) ?? []
+  const nodes = (entityType) => nodesByType.get(entityType) ?? []
 
   return {
     nodes,
@@ -542,7 +505,7 @@ const makeWorldGraph = (world: InstanceWorld, ontology: Ontology): GraphView => 
  * template graph plan over the typed world graph and canonicalizes the support
  * set with the same fold the SQL oracle uses — so a verdict difference can only
  * come from traversal semantics, never from formatting. */
-export const makeGraphPath = (world: InstanceWorld, ontology: Ontology): AnswerPath => {
+export const makeGraphPath = (world, ontology) => {
   const graph = makeWorldGraph(world, ontology)
   return {
     name: "graph-path",
@@ -559,63 +522,19 @@ export const makeGraphPath = (world: InstanceWorld, ontology: Ontology): AnswerP
 
 // ── Suite runner + report ────────────────────────────────────────────────────
 
-/** One graded question: both answers, the verdict, and the path failure if any
- * (`path` null = the path failed to produce an answer at all). */
-export interface CqResult {
-  readonly templateId: string
-  readonly regime: CqRegime
-  readonly question: string
-  readonly binding: CqBinding
-  readonly oracle: Answer
-  readonly path: Answer | null
-  readonly pathError: string | null
-  readonly verdict: Verdict
-}
-
-export interface RegimeBreakdown {
-  readonly regime: CqRegime
-  readonly total: number
-  readonly match: number
-  readonly missing: number
-  readonly divergent: number
-  readonly unsupportedCitation: number
-  readonly agreementRate: number
-}
-
-/** Per-template binding count — a template with 0 bindings is visible, never silently green. */
-export interface TemplateBindings { readonly templateId: string; readonly regime: CqRegime; readonly bindings: number }
-
-/** Verdict counts + rates: answerableRate (path produced a non-missing answer),
- * agreementRate (graded `match` — the headline dual-oracle number), and
- * citationResolvesRate (path citations resolving into the oracle's support set). */
-export interface CqReport {
-  readonly pathName: string
-  readonly total: number
-  readonly match: number
-  readonly missing: number
-  readonly divergent: number
-  readonly unsupportedCitation: number
-  readonly answerableRate: number
-  readonly agreementRate: number
-  readonly citationResolvesRate: number
-  readonly byRegime: ReadonlyArray<RegimeBreakdown>
-  readonly byTemplate: ReadonlyArray<TemplateBindings>
-  readonly results: ReadonlyArray<CqResult>
-}
-
-/** `ontology` gives exact-DDL loading (all tables exist, even empty; omitted =
- * inferred from rows — fixtures); `oracle` substitutes ground truth; `templates`
- * feeds the 0-binding visibility rows (defaults to fhirCqTemplates). */
-export interface RunCqOptions {
-  readonly ontology?: Ontology
-  readonly oracle?: Oracle
-  readonly templates?: ReadonlyArray<CqTemplate>
-}
+// A CqResult is one graded question: { templateId, regime, question, binding,
+// oracle, path, pathError, verdict } — both answers, the verdict, and the
+// path failure if any (`path` null = the path failed to produce an answer at
+// all). The CqReport aggregates verdict counts + rates: answerableRate (path
+// produced a non-missing answer), agreementRate (graded `match` — the
+// headline dual-oracle number), and citationResolvesRate (path citations
+// resolving into the oracle's support set), plus per-regime and per-template
+// breakdowns (a template with 0 bindings is visible, never silently green).
 
 /** Vacuous rates (no citations) read as 1 — nothing was wrong. */
-const ratio = (num: number, den: number): number => (den === 0 ? 1 : num / den)
+const ratio = (num, den) => (den === 0 ? 1 : num / den)
 
-const questionOf = (binding: CqBinding): string => {
+const questionOf = (binding) => {
   try {
     return binding.template.text(binding)
   } catch {
@@ -629,14 +548,14 @@ const questionOf = (binding: CqBinding): string => {
  * `missing`), then fold verdicts into the report. Bindings run sequentially —
  * the store is a single connection by design. Throws MemorySqlError on an
  * empty binding list: nothing graded ≠ nothing wrong (SPEC gate semantics).
+ *
+ * Options: `ontology` gives exact-DDL loading (all tables exist, even empty;
+ * omitted = inferred from rows — fixtures); `oracle` substitutes ground truth;
+ * `templates` feeds the 0-binding visibility rows (defaults to
+ * fhirCqTemplates). Answers are `{ kind, value, citations }` with citations
+ * `{ entityType, id }` (see the Answer notes above).
  */
-export const runCq = async (
-  store: Store,
-  world: InstanceWorld,
-  bindings: ReadonlyArray<CqBinding>,
-  path: AnswerPath,
-  opts?: RunCqOptions
-): Promise<CqReport> => {
+export const runCq = async (store, world, bindings, path, opts) => {
   if (bindings.length === 0) {
     throw new MemorySqlError(
       "cq",
@@ -646,14 +565,14 @@ export const runCq = async (
   await loadWorld(store, opts?.ontology, world)
   const oracle = opts?.oracle ?? makeSqlOracle(store)
 
-  const results: CqResult[] = []
+  const results = []
   let supportedCitations = 0
   let totalCitations = 0
 
   for (const binding of bindings) {
     const oracleAnswer = canonicalizeAnswer(await oracle.answer(binding))
     const base = { templateId: binding.template.id, regime: binding.template.regime, question: questionOf(binding), binding, oracle: oracleAnswer }
-    let raw: Answer
+    let raw
     try {
       raw = await path.answer(binding)
     } catch (cause) {
@@ -666,9 +585,9 @@ export const runCq = async (
     results.push({ ...base, path: pathAnswer, pathError: null, verdict: computeVerdict(oracleAnswer, pathAnswer) })
   }
 
-  const count = (rs: ReadonlyArray<CqResult>, v: Verdict): number => rs.filter((r) => r.verdict === v).length
+  const count = (rs, v) => rs.filter((r) => r.verdict === v).length
 
-  const byRegime: RegimeBreakdown[] = []
+  const byRegime = []
   for (const regime of CQ_REGIMES) {
     const rs = results.filter((r) => r.regime === regime)
     if (rs.length === 0) continue
@@ -685,9 +604,9 @@ export const runCq = async (
 
   // Per-template counts over the DECLARED template list, so a template that
   // produced no binding on this world shows up as an explicit 0 row.
-  const perTemplate = new Map<string, number>()
+  const perTemplate = new Map()
   for (const b of bindings) perTemplate.set(b.template.id, (perTemplate.get(b.template.id) ?? 0) + 1)
-  const byTemplate: TemplateBindings[] = (opts?.templates ?? fhirCqTemplates).map((t) => ({
+  const byTemplate = (opts?.templates ?? fhirCqTemplates).map((t) => ({
     templateId: t.id, regime: t.regime, bindings: perTemplate.get(t.id) ?? 0
   }))
   for (const b of bindings) {
@@ -714,11 +633,11 @@ export const runCq = async (
   }
 }
 
-const pct = (x: number): string => `${(x * 100).toFixed(1)}%`
+const pct = (x) => `${(x * 100).toFixed(1)}%`
 
 /** Render a CqReport as plain text (verdict counts, rates, per-regime rows, per-template binding counts, ungraded templates). */
-export const formatCqReport = (report: CqReport): string => {
-  const lines: string[] = [
+export const formatCqReport = (report) => {
+  const lines = [
     `cq: path "${report.pathName}" vs SQL oracle — ${report.total} bindings over ${report.byTemplate.length} templates`,
     `  match ${report.match}  missing ${report.missing}  divergent ${report.divergent}  unsupported-citation ${report.unsupportedCitation}`,
     `  answerable ${pct(report.answerableRate)}  agreement ${pct(report.agreementRate)}  citations-resolve ${pct(report.citationResolvesRate)}`

@@ -19,17 +19,16 @@ import {
   requireEntityType,
   validateOntology
 } from "memory-sql"
-import type { Attribute, EntityType, Ontology, Relation } from "memory-sql"
 
-const ontology: Ontology = loadFhirOntology()
+const ontology = loadFhirOntology()
 
-const attr = (et: EntityType, name: string): Attribute => {
+const attr = (et, name) => {
   const found = et.attributes.find((a) => a.name === name)
   if (found === undefined) throw new Error(`${et.name} has no attribute "${name}"`)
   return found
 }
 
-const rel = (et: EntityType, name: string): Relation => {
+const rel = (et, name) => {
   const found = et.relations.find((r) => r.name === name)
   if (found === undefined) throw new Error(`${et.name} has no relation "${name}"`)
   return found

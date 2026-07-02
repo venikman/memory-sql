@@ -11,24 +11,18 @@ import { MemorySqlError } from "./ontology.js"
 /** The fixed "today" of the product — no Date.now anywhere (SPEC determinism). */
 export const REFERENCE_DATE = "2026-01-01"
 
-export interface Rng {
-  /** The seed this stream was created from. */
-  readonly seed: number
-  /** Uniform integer in [min, max], both inclusive. */
-  readonly int: (min: number, max: number) => number
-  /** Uniform element of a non-empty array; throws on empty (programmer error). */
-  readonly pick: <T>(items: readonly T[]) => T
-  /** True with the given probability in [0, 1]. */
-  readonly chance: (probability: number) => boolean
-  /** Uniform float in [min, max); defaults to [0, 1). */
-  readonly float: (min?: number, max?: number) => number
-  /** Deterministic uuid-shaped identifier (8-4-4-4-12 hex). */
-  readonly uuid: () => string
-}
-
-export const makeRng = (seed: number): Rng => {
+/**
+ * Create a seeded rng stream:
+ *   seed   — the seed this stream was created from;
+ *   int    — uniform integer in [min, max], both inclusive;
+ *   pick   — uniform element of a non-empty array; throws on empty (programmer error);
+ *   chance — true with the given probability in [0, 1];
+ *   float  — uniform float in [min, max); defaults to [0, 1);
+ *   uuid   — deterministic uuid-shaped identifier (8-4-4-4-12 hex).
+ */
+export const makeRng = (seed) => {
   let state = seed >>> 0
-  const next = (): number => {
+  const next = () => {
     state = (state + 0x9e3779b9) >>> 0
     let z = state
     z ^= z >>> 16
@@ -38,16 +32,16 @@ export const makeRng = (seed: number): Rng => {
     z ^= z >>> 15
     return (z >>> 0) / 4294967296
   }
-  const int = (min: number, max: number): number => {
+  const int = (min, max) => {
     if (max < min) throw new MemorySqlError("rng", `makeRng.int: max ${max} < min ${min}`)
     return min + Math.floor(next() * (max - min + 1))
   }
-  const pick = <T>(items: readonly T[]): T => {
+  const pick = (items) => {
     if (items.length === 0) throw new MemorySqlError("rng", "makeRng.pick: empty array")
-    return items[int(0, items.length - 1)] as T
+    return items[int(0, items.length - 1)]
   }
-  const uuid = (): string => {
-    const run = (n: number): string => Array.from({ length: n }, () => int(0, 15).toString(16)).join("")
+  const uuid = () => {
+    const run = (n) => Array.from({ length: n }, () => int(0, 15).toString(16)).join("")
     return `${run(8)}-${run(4)}-${run(4)}-${run(4)}-${run(12)}`
   }
   return { seed, int, pick, chance: (p) => next() < p, float: (min = 0, max = 1) => min + next() * (max - min), uuid }
@@ -58,7 +52,7 @@ export const makeRng = (seed: number): Rng => {
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})/
 
 /** Days since the civil epoch 1970-01-01 for a (year, month 1-12, day) triple. */
-export const daysFromCivil = (y0: number, m: number, d: number): number => {
+export const daysFromCivil = (y0, m, d) => {
   const y = m <= 2 ? y0 - 1 : y0
   const era = Math.floor(y / 400)
   const yoe = y - era * 400
@@ -68,7 +62,7 @@ export const daysFromCivil = (y0: number, m: number, d: number): number => {
 }
 
 /** Inverse of daysFromCivil: day count since 1970-01-01 back to a civil triple. */
-const civilFromDays = (days: number): { readonly y: number; readonly m: number; readonly d: number } => {
+const civilFromDays = (days) => {
   const z = days + 719468
   const era = Math.floor(z / 146097)
   const doe = z - era * 146097
@@ -82,7 +76,7 @@ const civilFromDays = (days: number): { readonly y: number; readonly m: number; 
 }
 
 /** Parse an ISO `YYYY-MM-DD` prefix into a day count; null when not a date. */
-export const parseIsoDays = (value: unknown): number | null => {
+export const parseIsoDays = (value) => {
   if (typeof value !== "string") return null
   const match = ISO_DATE.exec(value)
   if (match === null) return null
@@ -93,8 +87,8 @@ export const parseIsoDays = (value: unknown): number | null => {
 }
 
 /** Format a day count as ISO `YYYY-MM-DD`. */
-export const formatIsoDate = (days: number): string => {
+export const formatIsoDate = (days) => {
   const { y, m, d } = civilFromDays(days)
-  const pad = (n: number, w: number): string => String(n).padStart(w, "0")
+  const pad = (n, w) => String(n).padStart(w, "0")
   return `${pad(y, 4)}-${pad(m, 2)}-${pad(d, 2)}`
 }

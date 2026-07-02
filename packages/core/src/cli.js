@@ -12,7 +12,6 @@
  */
 import { readFile, writeFile } from "node:fs/promises"
 import { parseArgs } from "node:util"
-import type { CqReport, InstanceWorld } from "./index.js"
 import {
   bindTemplates,
   fhirCqTemplates,
@@ -57,13 +56,11 @@ const MAX_FINDINGS_SHOWN = 10
 
 // ── Flag parsing (node:util parseArgs — no CLI framework per SPEC v2) ────────
 
-type FlagSpec = Readonly<Record<string, { readonly type: "string"; readonly short?: string }>>
-
 /** Parse the flags of one subcommand; unknown flags become a friendly error. */
-const parsedFlags = <T extends FlagSpec>(args: readonly string[], options: T): { readonly [K in keyof T]: string | undefined } => {
+const parsedFlags = (args, options) => {
   try {
     const { values } = parseArgs({ args: [...args], options, allowPositionals: false })
-    return values as unknown as { readonly [K in keyof T]: string | undefined }
+    return values
   } catch (cause) {
     throw new MemorySqlError(
       "cli",
@@ -73,7 +70,7 @@ const parsedFlags = <T extends FlagSpec>(args: readonly string[], options: T): {
   }
 }
 
-const intFlag = (name: string, raw: string | undefined, fallback: number): number => {
+const intFlag = (name, raw, fallback) => {
   if (raw === undefined) return fallback
   const value = Number(raw)
   if (!Number.isSafeInteger(value)) throw new MemorySqlError("cli", `--${name} expects an integer, got "${raw}"`)
@@ -81,13 +78,13 @@ const intFlag = (name: string, raw: string | undefined, fallback: number): numbe
 }
 
 /** Every expected error becomes one friendly, actionable line + exit 1 — never a stack trace. */
-const explain = (error: unknown): string =>
+const explain = (error) =>
   error instanceof MemorySqlError
     ? `memory-sql: [${error.op}] ${error.message}`
     : `memory-sql: ${error instanceof Error ? error.message : String(error)}`
 
 /** A finding fails the run (CI-gate semantics) without aborting the printout. */
-const failRun = (message: string): void => {
+const failRun = (message) => {
   console.log(message)
   process.exitCode = 1
 }
@@ -96,11 +93,11 @@ const failRun = (message: string): void => {
 // domain before it gets near the engines (per-column type validation against
 // the ontology then happens in loadWorld). ──────────────────────────────────
 
-const isScalar = (value: unknown): value is string | number | boolean | null =>
+const isScalar = (value) =>
   value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean"
 
-const parseWorld = (raw: unknown, path: string): InstanceWorld => {
-  const bad = (detail: string): MemorySqlError => new MemorySqlError("parse", `--world file ${path}: ${detail}`)
+const parseWorld = (raw, path) => {
+  const bad = (detail) => new MemorySqlError("parse", `--world file ${path}: ${detail}`)
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
     throw bad("expected an object mapping entity type -> array of rows")
   }
@@ -110,24 +107,24 @@ const parseWorld = (raw: unknown, path: string): InstanceWorld => {
       if (row === null || typeof row !== "object" || Array.isArray(row)) {
         throw bad(`${entityType}[${i}] must be an object of column -> scalar`)
       }
-      for (const [column, value] of Object.entries(row as Record<string, unknown>)) {
+      for (const [column, value] of Object.entries(row)) {
         if (!isScalar(value)) throw bad(`${entityType}[${i}].${column} must be string | number | boolean | null`)
       }
     }
   }
-  return raw as InstanceWorld
+  return raw
 }
 
-const readWorldFile = async (path: string): Promise<InstanceWorld> => {
-  let text: string
+const readWorldFile = async (path) => {
+  let text
   try {
     text = await readFile(path, "utf8")
   } catch (cause) {
     throw new MemorySqlError("parse", `cannot read --world file ${path}`, cause)
   }
-  let raw: unknown
+  let raw
   try {
-    raw = JSON.parse(text) as unknown
+    raw = JSON.parse(text)
   } catch (cause) {
     throw new MemorySqlError("parse", `--world file ${path} is not valid JSON`, cause)
   }
@@ -136,7 +133,7 @@ const readWorldFile = async (path: string): Promise<InstanceWorld> => {
 
 // ── synth — write a deterministic clean world to JSON ────────────────────────
 
-const synthCommand = async (args: readonly string[]): Promise<void> => {
+const synthCommand = async (args) => {
   const flags = parsedFlags(args, {
     seed: { type: "string", short: "s" },
     patients: { type: "string", short: "p" },
@@ -155,7 +152,7 @@ const synthCommand = async (args: readonly string[]): Promise<void> => {
 
 // ── cq — Stage 1: dual-oracle suite, GraphPath vs the SQL oracle ─────────────
 
-const cqCommand = async (args: readonly string[]): Promise<void> => {
+const cqCommand = async (args) => {
   const flags = parsedFlags(args, {
     seed: { type: "string", short: "s" },
     world: { type: "string" },
@@ -183,7 +180,7 @@ const cqCommand = async (args: readonly string[]): Promise<void> => {
   // runCq loads the world itself; { ontology } gives it exact DDL (all tables
   // exist, even empty ones — negative-control questions depend on that).
   const store = await openStore()
-  let report: CqReport
+  let report
   try {
     report = await runCq(store, world, bindings, makeGraphPath(world, ontology), { ontology })
   } finally {
@@ -210,7 +207,7 @@ const cqCommand = async (args: readonly string[]): Promise<void> => {
 
 // ── sim — Stage 2: metamorphic relations + adversarial stress ────────────────
 
-const simCommand = async (args: readonly string[]): Promise<void> => {
+const simCommand = async (args) => {
   const flags = parsedFlags(args, {
     seed: { type: "string", short: "s" },
     mrs: { type: "string" }
@@ -224,12 +221,12 @@ const simCommand = async (args: readonly string[]): Promise<void> => {
   // (a) metamorphic: label-free relations over sampled bindings, the GraphPath
   // as the answer layer under test. Fresh store per engine run — hermetic.
   const store = await openStore()
-  let metamorphic: Awaited<ReturnType<typeof runMetamorphic>>
+  let metamorphic
   try {
     metamorphic = await runMetamorphic(store, world, {
       ontology,
       bindings: bindTemplates(fhirCqTemplates, world, makeRng(seed), SIM_BINDING_COUNT),
-      makePath: (w: InstanceWorld) => makeGraphPath(w, ontology),
+      makePath: (w) => makeGraphPath(w, ontology),
       seed,
       runsPerRelation: mrs
     })
@@ -252,7 +249,7 @@ const simCommand = async (args: readonly string[]): Promise<void> => {
 
 // ── dispatch + run ───────────────────────────────────────────────────────────
 
-const main = async (argv: readonly string[]): Promise<void> => {
+const main = async (argv) => {
   const [command, ...rest] = argv
   switch (command) {
     case undefined:
@@ -275,7 +272,7 @@ const main = async (argv: readonly string[]): Promise<void> => {
   }
 }
 
-main(process.argv.slice(2)).catch((error: unknown) => {
+main(process.argv.slice(2)).catch((error) => {
   console.error(explain(error))
   process.exitCode = 1
 })

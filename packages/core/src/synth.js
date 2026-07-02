@@ -9,32 +9,28 @@
  * patient-scoped (Patient-targeting relations bind to the owning patient,
  * patient-scoped targets come from the same patient's rows) and ClaimResponse/
  * ExplanationOfBenefit/CoverageEligibilityResponse pair 1:1 with what they
- * answer. Adversarial corruption lives in sim.ts — cleanliness here is itself
+ * answer. Adversarial corruption lives in sim.js — cleanliness here is itself
  * a tested contract. Deterministic: same (ontology, seed, patients) =>
  * deep-equal worlds. Generic over the Ontology; the FHIR parts are pure
  * sizing/pairing configuration keyed by entity names.
  */
-import type { Attribute, EntityType, Ontology } from "./ontology.js"
 import { getEntityType, MemorySqlError } from "./ontology.js"
-import type { Rng } from "./rng.js"
 import { daysFromCivil, formatIsoDate, makeRng, parseIsoDays } from "./rng.js"
-import type { InstanceWorld, Row, SqlValue } from "./store.js"
 import { relationRefColumn, relationRefTypeColumn, tableName } from "./store.js"
 
-/** `patients` = cohort size; defaults to 20. */
-export interface GenerateOptions { readonly seed: number; readonly patients?: number }
+// generateWorld options: { seed, patients? } — `patients` = cohort size; defaults to 20.
 
 // ── Sizing + pairing configuration (FHIR-aware data, not engine logic) ───────
 
-/** `base` = fixed row count for shared types; `perPatient` = per-patient row count range. */
-interface Sizing { readonly base: number; readonly perPatient: readonly [number, number] }
+// A sizing is { base, perPatient: [min, max] }: `base` = fixed row count for
+// shared types; `perPatient` = per-patient row count range.
 
-const DEFAULT_SIZING: Sizing = { base: 3, perPatient: [0, 0] }
+const DEFAULT_SIZING = { base: 3, perPatient: [0, 0] }
 
-const shared = (base: number): Sizing => ({ base, perPatient: [0, 0] })
-const perPatient = (min: number, max: number): Sizing => ({ base: 0, perPatient: [min, max] })
+const shared = (base) => ({ base, perPatient: [0, 0] })
+const perPatient = (min, max) => ({ base: 0, perPatient: [min, max] })
 
-const SIZING: Readonly<Record<string, Sizing>> = {
+const SIZING = {
   // shared directory / catalog resources
   Organization: shared(6), Practitioner: shared(10), PractitionerRole: shared(10), Location: shared(6),
   Medication: shared(12), Endpoint: shared(3), HealthcareService: shared(4), Questionnaire: shared(3),
@@ -56,7 +52,7 @@ const SIZING: Readonly<Record<string, Sizing>> = {
 /** Derived types get exactly one row per source row (same owning patient), and the
  * named relation is wired to that source row: a ClaimResponse answers one Claim, an
  * EOB explains one Claim, an eligibility response answers one request. */
-const PAIRINGS: Readonly<Record<string, { readonly source: string; readonly relation: string }>> = {
+const PAIRINGS = {
   ClaimResponse: { source: "Claim", relation: "request" },
   ExplanationOfBenefit: { source: "Claim", relation: "claim" },
   CoverageEligibilityResponse: { source: "CoverageEligibilityRequest", relation: "request" }
@@ -67,24 +63,24 @@ const MIN_ROWS = 2
 
 // ── Deterministic value pools + date helpers (pure civil-day math) ───────────
 
-const FAMILY_NAMES = ["Alvarez", "Brandt", "Chen", "Dubois", "Eriksen", "Fontaine", "Garcia", "Hoffman", "Ivanov", "Jensen", "Kowalski", "Lindqvist", "Moreau", "Nakamura", "Okafor", "Petrov"] as const
-const GIVEN_NAMES = ["Ada", "Boris", "Clara", "David", "Elena", "Farid", "Greta", "Hugo", "Ingrid", "Jonas", "Katya", "Liam", "Mira", "Noor", "Otto", "Priya"] as const
-const CITIES = ["Springfield", "Riverton", "Lakewood", "Fairview", "Brookside", "Milltown", "Ashford", "Granite Bay"] as const
-const STATES = ["CA", "CO", "IL", "MA", "NY", "OH", "TX", "WA"] as const
-const UNITS = ["mg", "mL", "mmHg", "kg", "%", "1"] as const
+const FAMILY_NAMES = ["Alvarez", "Brandt", "Chen", "Dubois", "Eriksen", "Fontaine", "Garcia", "Hoffman", "Ivanov", "Jensen", "Kowalski", "Lindqvist", "Moreau", "Nakamura", "Okafor", "Petrov"]
+const GIVEN_NAMES = ["Ada", "Boris", "Clara", "David", "Elena", "Farid", "Greta", "Hugo", "Ingrid", "Jonas", "Katya", "Liam", "Mira", "Noor", "Otto", "Priya"]
+const CITIES = ["Springfield", "Riverton", "Lakewood", "Fairview", "Brookside", "Milltown", "Ashford", "Granite Bay"]
+const STATES = ["CA", "CO", "IL", "MA", "NY", "OH", "TX", "WA"]
+const UNITS = ["mg", "mL", "mmHg", "kg", "%", "1"]
 
-const isoDays = (iso: string): number => {
+const isoDays = (iso) => {
   const days = parseIsoDays(iso)
   if (days === null) throw new MemorySqlError("synth", `generator produced a non-ISO date "${iso}"`)
   return days
 }
 
-const randomDate = (rng: Rng, fromYear: number, toYear: number): string => {
+const randomDate = (rng, fromYear, toYear) => {
   const from = daysFromCivil(fromYear, 1, 1)
   return formatIsoDate(from + rng.int(0, daysFromCivil(toYear, 12, 31) - from))
 }
 
-const addDays = (iso: string, days: number): string => formatIsoDate(isoDays(iso) + days)
+const addDays = (iso, days) => formatIsoDate(isoDays(iso) + days)
 
 // ── Attribute filling ────────────────────────────────────────────────────────
 
@@ -97,13 +93,13 @@ const OPTIONAL_FILL_PROBABILITY = 0.85
  * hit); *_cents/_currency/_unit/_family/_given/_city/_state -> themed pools;
  * birth_date -> 1935..2005; other dates -> 2020..2025 as plain ISO dates (uniform
  * TEXT comparability); 'deceased' fills only 10% of the time; 'active' 90% true. */
-const attributeValue = (attr: Attribute, rng: Rng): SqlValue => {
+const attributeValue = (attr, rng) => {
   const fillProbability = attr.name === "deceased" ? 0.1 : OPTIONAL_FILL_PROBABILITY
   if (!attr.required && !rng.chance(fillProbability)) return null
   switch (attr.type) {
     case "code": {
       const vs = attr.valueSet
-      if (vs !== undefined && vs.length > 0) return rng.chance(0.5) ? (vs[0] as string) : rng.pick(vs)
+      if (vs !== undefined && vs.length > 0) return rng.chance(0.5) ? vs[0] : rng.pick(vs)
       return `${attr.name}-${rng.int(1, 6)}`
     }
     case "boolean":
@@ -126,11 +122,9 @@ const attributeValue = (attr: Attribute, rng: Rng): SqlValue => {
   }
 }
 
-type MutableRow = Record<string, SqlValue>
-
 /** Fill all attributes of a row; `<x>_start`/`<x>_end` pairs are generated together, ordered. */
-const fillAttributes = (entityType: EntityType, row: MutableRow, rng: Rng): void => {
-  const done = new Set<string>()
+const fillAttributes = (entityType, row, rng) => {
+  const done = new Set()
   for (const attr of entityType.attributes) {
     if (done.has(attr.name)) continue
     if (attr.name.endsWith("_start")) {
@@ -160,20 +154,20 @@ const fillAttributes = (entityType: EntityType, row: MutableRow, rng: Rng): void
 
 /** Generate a clean, referentially consistent world. Deterministic: the same
  * (ontology, seed, patients) triple always yields a deep-equal world. */
-export const generateWorld = (ontology: Ontology, opts: GenerateOptions): InstanceWorld => {
+export const generateWorld = (ontology, opts) => {
   const rng = makeRng(opts.seed)
   const patientCount = Math.max(1, opts.patients ?? 20)
   const hasPatient = getEntityType(ontology, "Patient") !== undefined
 
-  const rowsByType = new Map<string, MutableRow[]>()
-  const idPool = new Map<string, string[]>()
-  const ownerOf = new Map<string, string>() // row id -> owning patient id
-  const byOwner = new Map<string, Map<string, string[]>>() // type -> patient id -> row ids
+  const rowsByType = new Map()
+  const idPool = new Map()
+  const ownerOf = new Map() // row id -> owning patient id
+  const byOwner = new Map() // type -> patient id -> row ids
 
-  const addRow = (et: EntityType, owner: string | undefined): MutableRow => {
+  const addRow = (et, owner) => {
     const list = rowsByType.get(et.name) ?? []
     const id = `${tableName(et.name)}-${String(list.length + 1).padStart(3, "0")}`
-    const row: MutableRow = { id }
+    const row = { id }
     fillAttributes(et, row, rng)
     list.push(row)
     rowsByType.set(et.name, list)
@@ -182,7 +176,7 @@ export const generateWorld = (ontology: Ontology, opts: GenerateOptions): Instan
     idPool.set(et.name, pool)
     if (owner !== undefined) {
       ownerOf.set(id, owner)
-      const perType = byOwner.get(et.name) ?? new Map<string, string[]>()
+      const perType = byOwner.get(et.name) ?? new Map()
       const ownerIds = perType.get(owner) ?? []
       ownerIds.push(id)
       perType.set(owner, ownerIds)
@@ -192,10 +186,10 @@ export const generateWorld = (ontology: Ontology, opts: GenerateOptions): Instan
   }
 
   // ── Pass 1: rows + attributes for every entity type (ontology order) ──
-  const patientIds: string[] = []
+  const patientIds = []
   for (const et of ontology.entityTypes) {
     if (et.name === "Patient" && hasPatient) {
-      for (let i = 0; i < patientCount; i++) patientIds.push(addRow(et, undefined)["id"] as string)
+      for (let i = 0; i < patientCount; i++) patientIds.push(addRow(et, undefined)["id"])
       continue
     }
     const pairing = PAIRINGS[et.name]
@@ -224,7 +218,7 @@ export const generateWorld = (ontology: Ontology, opts: GenerateOptions): Instan
 
   // Pairing map: n-th derived row of a type pairs with the n-th source row
   // (both were created in source order with matching owners).
-  const pairedSourceOf = new Map<string, string>()
+  const pairedSourceOf = new Map()
   for (const [derivedType, pairing] of Object.entries(PAIRINGS)) {
     const derivedIds = idPool.get(derivedType) ?? []
     const sourceIds = idPool.get(pairing.source) ?? []
@@ -238,10 +232,10 @@ export const generateWorld = (ontology: Ontology, opts: GenerateOptions): Instan
   for (const et of ontology.entityTypes) {
     const pairing = PAIRINGS[et.name]
     for (const row of rowsByType.get(et.name) ?? []) {
-      const rowId = row["id"] as string
+      const rowId = row["id"]
       const owner = ownerOf.get(rowId)
       for (const rel of et.relations) {
-        const set = (id: string | null, targetType: string | null): void => {
+        const set = (id, targetType) => {
           row[relationRefColumn(rel.name)] = id
           if (rel.target.length > 1) row[relationRefTypeColumn(rel.name)] = id === null ? null : targetType
         }
@@ -277,13 +271,13 @@ export const generateWorld = (ontology: Ontology, opts: GenerateOptions): Instan
 
         // same-patient rows win when the target type is patient-scoped
         const ownerPool = owner !== undefined ? byOwner.get(targetType)?.get(owner) : undefined
-        const pool = ownerPool !== undefined && ownerPool.length > 0 ? ownerPool : (idPool.get(targetType) as string[])
-        let chosen: string | null = rng.pick(pool)
+        const pool = ownerPool !== undefined && ownerPool.length > 0 ? ownerPool : idPool.get(targetType)
+        let chosen = rng.pick(pool)
         if (chosen === rowId) {
           // self-reference guard: clean worlds never self-link (stress plants those)
           chosen =
             pool.find((x) => x !== rowId) ??
-            (idPool.get(targetType) as string[]).find((x) => x !== rowId) ??
+            idPool.get(targetType).find((x) => x !== rowId) ??
             null
         }
         set(chosen, chosen === null ? null : targetType)
@@ -291,7 +285,7 @@ export const generateWorld = (ontology: Ontology, opts: GenerateOptions): Instan
     }
   }
 
-  const world: Record<string, Row[]> = {}
-  for (const et of ontology.entityTypes) world[et.name] = (rowsByType.get(et.name) ?? []) as Row[]
+  const world = {}
+  for (const et of ontology.entityTypes) world[et.name] = rowsByType.get(et.name) ?? []
   return world
 }

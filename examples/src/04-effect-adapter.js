@@ -1,7 +1,7 @@
 /**
  * Example 04 — the Effect adapter: `memory-sql/effect`.
  *
- * The plain core never imports Effect (enforced by tests/src/isolation.test.ts);
+ * The plain core never imports Effect (enforced by tests/src/isolation.test.js);
  * Effect users get everything through this one subpath instead:
  *
  *   - `MemorySql`, a Context.Tag service over one open store, provided by the
@@ -17,7 +17,6 @@
  * Pure data types and helpers still come from the plain "memory-sql" surface.
  */
 import { Effect } from "effect"
-import type { InstanceWorld } from "memory-sql"
 import { bindTemplates, fhirCqTemplates, makeGraphPath, makeRng } from "memory-sql"
 import { generateWorld, layer, loadFhirOntology, MemorySql } from "memory-sql/effect"
 
@@ -29,7 +28,7 @@ const SUITE_SIZE = 26 // two bindings per shipped template
 // be an ISO string (TEXT column), not a number. The load boundary rejects it
 // with a pointed error instead of letting DuckDB cast silently — here it
 // arrives on Effect's typed error channel as the tagged MemorySqlError.
-const poisonedWorld: InstanceWorld = {
+const poisonedWorld = {
   Patient: [{ id: "patient-poisoned", birth_date: 19700101 }]
 }
 
@@ -72,7 +71,7 @@ const program = Effect.gen(function* () {
 program.pipe(
   Effect.provide(layer()),
   Effect.runPromise
-).catch((error: unknown) => {
+).catch((error) => {
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 1
 })
