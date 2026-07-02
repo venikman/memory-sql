@@ -1,3 +1,11 @@
+> **THIS IS THE `js` BRANCH** — the no-TypeScript variant. The spec below is
+> the authoritative v2 contract written for the TS implementation on `main`;
+> on this branch every behavioral clause applies unchanged, while the
+> TypeScript-specific mandates read as their JS equivalents: plain ESM `.js`
+> run directly by Node (no build), no `typescript`/`tsx` anywhere, and the
+> Effect isolation gate scans `.js` files. Behavior parity with `main` is
+> byte-verified (see README callout).
+
 # memory-sql — SPEC v2 (minimalist refactor)
 
 **memory-sql** is an ontology-backed SQL memory layer with built-in validation:
