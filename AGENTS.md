@@ -1,5 +1,10 @@
 # AGENTS.md — standing contract for agents working in memory-sql
 
+> **`js` BRANCH:** pure-JavaScript variant — no TypeScript, no build step; `node`
+> runs `packages/core/src` directly and consumers import source, not dist.
+> Doc snippets are shown in TS notation: strip the type annotations, the API
+> is identical. Everything else below applies unchanged.
+
 ## What this is
 
 memory-sql is an ontology-backed SQL memory layer with built-in validation.
@@ -22,7 +27,6 @@ the product; `examples/` and `tests/` consume it by package name only.
 
 ```sh
 npm install          # all three workspaces
-npm run build        # tsc: packages/core/src -> dist/ (examples/tests import dist)
 npm test             # builds, then runs the vitest suite in tests/
                      # expected tail: "Test Files  9 passed (9)" — always run via
                      # npm test; bare `npx vitest run` from the repo root misses

@@ -1,3 +1,8 @@
+> **`js` branch note:** code snippets in these playbooks use TypeScript
+> notation (written for `main`). On this branch, strip type annotations —
+> imports, signatures, behavior, and acceptance outputs are identical, and
+> there is no build step (`node` runs source directly).
+
 # docs/adopt — adoption playbooks
 
 Stepwise, machine-checkable guides for wiring memory-sql into an existing
