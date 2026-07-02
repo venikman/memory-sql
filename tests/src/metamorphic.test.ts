@@ -7,17 +7,16 @@
  * We assert (a) the four shipped relations hold on the correct stack
  * (GraphPath + SqlOracle over a clean world), deterministically per seed, and
  * (b) the engine has teeth: a planted traversal bug — a GraphPath variant
- * that ignores period filters — is caught by `temporal-narrowing` with a
- * shrunk fast-check counterexample. The buggy path answers the narrowed
- * follow-up with rows from ALL time, which cannot stay inside the oracle's
- * wide-period ground truth, so the subset expectation must fail.
+ * that ignores period filters — is caught by `temporal-narrowing` with the
+ * first failing case reported (binding index + case seed, replayable; v2
+ * dropped fast-check, so no shrinking — the documented trade-off). The buggy
+ * path answers the narrowed follow-up with rows from ALL time, which cannot
+ * stay inside the oracle's wide-period ground truth, so the subset/equality
+ * expectations must fail.
  */
-import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import {
-  SqlOracle,
   bindTemplates,
-  duckDbLayer,
   fhirCqTemplates,
   generateWorld,
   isPeriod,
@@ -25,6 +24,7 @@ import {
   makeGraphPath,
   makeRng,
   metamorphicRelations,
+  openStore,
   runMetamorphic,
   temporalNarrowing,
   withParam
@@ -32,13 +32,13 @@ import {
 import type {
   AnswerPath,
   CqBinding,
-  DuckDb,
   InstanceWorld,
   MetamorphicReport,
+  MetamorphicRunOptions,
   Ontology
 } from "memory-sql"
 
-const ontology: Ontology = await Effect.runPromise(loadFhirOntology())
+const ontology: Ontology = loadFhirOntology()
 const world = generateWorld(ontology, { seed: 42, patients: 8 })
 
 // Round-robin: two bindings per shipped template, from real world rows.
@@ -71,8 +71,15 @@ const periodIgnoringPath = (w: InstanceWorld): AnswerPath => {
   }
 }
 
-const withDb = <A, E>(effect: Effect.Effect<A, E, DuckDb>): Promise<A> =>
-  Effect.runPromise(Effect.provide(effect, duckDbLayer()))
+/** Run the metamorphic engine over a fresh in-memory store (closed on settle). */
+const run = async (opts: MetamorphicRunOptions): Promise<MetamorphicReport> => {
+  const store = await openStore()
+  try {
+    return await runMetamorphic(store, world, opts)
+  } finally {
+    store.close()
+  }
+}
 
 describe("metamorphic: shipped relations", () => {
   it("ships exactly the four SPEC relations", () => {
@@ -85,17 +92,13 @@ describe("metamorphic: shipped relations", () => {
   })
 
   it("all four hold on the correct stack (GraphPath + SqlOracle, clean world)", async () => {
-    const report: MetamorphicReport = await withDb(
-      runMetamorphic({
-        ontology,
-        world,
-        bindings,
-        makePath: correctPath,
-        oracle: SqlOracle,
-        seed: 2026,
-        runsPerRelation: 40
-      })
-    )
+    const report = await run({
+      ontology,
+      bindings,
+      makePath: correctPath,
+      seed: 2026,
+      runsPerRelation: 40
+    })
     expect(report.results).toHaveLength(4)
     const failures = report.results
       .filter((r) => !r.passed)
@@ -104,21 +107,22 @@ describe("metamorphic: shipped relations", () => {
     expect(report.passed).toBe(true)
     for (const result of report.results) {
       expect(result.counterexample, result.relationId).toBeNull()
+      // Not vacuous: every shipped relation applies to this binding sample.
+      expect(result.applicableBindings, result.relationId).toBeGreaterThan(0)
+      expect(result.runs, result.relationId).toBeGreaterThan(0)
     }
   })
 
   it("is deterministic: same seed, same world, same report", async () => {
-    const opts = {
+    const opts: MetamorphicRunOptions = {
       ontology,
-      world,
       bindings,
       makePath: correctPath,
-      oracle: SqlOracle,
       seed: 7,
       runsPerRelation: 15
     }
-    const a = await withDb(runMetamorphic(opts))
-    const b = await withDb(runMetamorphic(opts))
+    const a = await run(opts)
+    const b = await run(opts)
     expect(a).toEqual(b)
   })
 })
@@ -126,48 +130,43 @@ describe("metamorphic: shipped relations", () => {
 describe("metamorphic: temporal-narrowing has teeth", () => {
   it("exercises real narrowings on period-parameterized bindings (not vacuous)", async () => {
     expect(temporalBindings.length).toBeGreaterThan(0)
-    const report = await withDb(
-      runMetamorphic({
-        ontology,
-        world,
-        bindings: temporalBindings,
-        makePath: correctPath,
-        oracle: SqlOracle,
-        seed: 2026,
-        relations: [temporalNarrowing],
-        runsPerRelation: 60
-      })
-    )
+    const report = await run({
+      ontology,
+      bindings: temporalBindings,
+      makePath: correctPath,
+      seed: 2026,
+      relations: [temporalNarrowing],
+      runsPerRelation: 60
+    })
     const result = report.results[0]
     expect(result?.relationId).toBe("temporal-narrowing")
     expect(result?.passed).toBe(true)
     // Tripwire: every binding here HAS a {period} parameter, so the relation
     // must actually transform cases — an all-skipped run would mean the
     // narrowing never engages and could never catch a temporal bug.
+    expect(result?.applicableBindings).toBe(temporalBindings.length)
     expect(result?.skipped ?? 0).toBeLessThan(result?.runs ?? 0)
   })
 
-  it("catches the planted period-ignoring traversal bug with a shrunk counterexample", async () => {
-    const report = await withDb(
-      runMetamorphic({
-        ontology,
-        world,
-        bindings: temporalBindings,
-        makePath: periodIgnoringPath,
-        oracle: SqlOracle,
-        seed: 2026,
-        relations: [temporalNarrowing],
-        runsPerRelation: 60
-      })
-    )
+  it("catches the planted period-ignoring traversal bug and reports the failing case", async () => {
+    const report = await run({
+      ontology,
+      bindings: temporalBindings,
+      makePath: periodIgnoringPath,
+      seed: 2026,
+      relations: [temporalNarrowing],
+      runsPerRelation: 60
+    })
     const result = report.results[0]
     expect(result?.relationId).toBe("temporal-narrowing")
     expect(result?.passed).toBe(false)
     expect(report.passed).toBe(false)
-    // fast-check must hand back the shrunk failing case, replayable by seed.
+    // The runner must hand back the first failing case, replayable by
+    // (binding index, case seed) — no shrinking in v2, but never silence.
     expect(result?.counterexample).not.toBeNull()
     expect(result?.counterexample?.detail).toMatch(/temporal-narrowing/)
     expect(result?.counterexample?.bindingIndex).toBeGreaterThanOrEqual(0)
     expect(result?.counterexample?.bindingIndex).toBeLessThan(temporalBindings.length)
+    expect(result?.counterexample?.caseSeed).toBeGreaterThanOrEqual(0)
   })
 })

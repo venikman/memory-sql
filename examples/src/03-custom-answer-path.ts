@@ -3,7 +3,8 @@
  *
  * `AnswerPath` is the plug-in surface: anything that can answer a bound
  * competency question — an LLM with a context window, a RAG stack, a wiki
- * agent, a graph store — can be graded against the deterministic SQL oracle.
+ * agent, a graph store — implements `answer(binding): Promise<Answer>` and is
+ * graded against the deterministic SQL oracle.
  *
  * Here the layer under test is `NotesPath`, a toy "notes file" memory: one
  * chart digest per patient, written once by a note-taker that reads the world,
@@ -24,7 +25,6 @@
  *
  * Isolation: imports ONLY the published "memory-sql" surface (by package name).
  */
-import { Effect } from "effect"
 import type {
   Answer,
   AnswerPath,
@@ -37,14 +37,12 @@ import type {
   SupportRow
 } from "memory-sql"
 import {
-  duckDbLayer,
   generateWorld,
   loadFhirOntology,
-  loadWorld,
+  openStore,
   paramString,
   REFERENCE_DATE,
-  runSuite,
-  SqlOracle,
+  runCq,
   sqlLiteral
 } from "memory-sql"
 
@@ -205,33 +203,32 @@ const takeNotes = (world: InstanceWorld): Map<string, PatientNotes> => {
   return notes
 }
 
-/** Answer from the notes alone. An AnswerPath closes over its own state — the
- * contract has no effect requirements, so a layer brings its own world. */
+/** Answer from the notes alone. An AnswerPath closes over its own state and
+ * returns a plain Promise — a layer brings its own world, its own runtime. */
 const makeNotesPath = (notes: Map<string, PatientNotes>): AnswerPath => ({
   name: "notes-file",
-  answer: (binding) =>
-    Effect.sync((): Answer => {
-      const chart = notes.get(paramString(binding, "patient"))
-      switch (binding.template.id) {
-        case "notes/active-conditions": {
-          const ids = chart?.activeConditions ?? []
-          return {
-            kind: "set",
-            value: [...ids],
-            citations: ids.map((id) => ({ entityType: "Condition", id }))
-          }
+  answer: async (binding: CqBinding): Promise<Answer> => {
+    const chart = notes.get(paramString(binding, "patient"))
+    switch (binding.template.id) {
+      case "notes/active-conditions": {
+        const ids = chart?.activeConditions ?? []
+        return {
+          kind: "set",
+          value: [...ids],
+          citations: ids.map((id) => ({ entityType: "Condition", id }))
         }
-        case "notes/eob-paid-total":
-          return {
-            kind: "scalar",
-            value: chart?.eobTotalCents ?? 0,
-            citations: [...(chart?.eobSources ?? [])]
-          }
-        default:
-          // No notes on this topic at all — the layer simply has nothing.
-          return { kind: "set", value: [], citations: [] }
       }
-    })
+      case "notes/eob-paid-total":
+        return {
+          kind: "scalar",
+          value: chart?.eobTotalCents ?? 0,
+          citations: [...(chart?.eobSources ?? [])]
+        }
+      default:
+        // No notes on this topic at all — the layer simply has nothing.
+        return { kind: "set", value: [], citations: [] }
+    }
+  }
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -255,27 +252,38 @@ const showReport = (report: CqReport): void => {
     const example = report.results.find((r) => r.verdict === wanted)
     if (example === undefined) continue
     console.log("")
+    // citations are { entityType, id } objects; print them as EntityType/id so
+    // nobody reads them back as bare id strings (bare strings never resolve)
+    const cites = (cs: ReadonlyArray<Citation>): string => `[${cs.map((c) => `${c.entityType}/${c.id}`).join(", ")}]`
     console.log(`${wanted}: ${example.question}`)
-    console.log(`  oracle: ${JSON.stringify(example.oracle.value)} cites ${JSON.stringify(example.oracle.citations.map((c) => c.id))}`)
+    console.log(`  oracle: ${JSON.stringify(example.oracle.value)} cites ${cites(example.oracle.citations)}`)
     console.log(
       `  notes:  ${example.path === null ? "(no answer)" : JSON.stringify(example.path.value)}` +
-        `${example.path === null ? "" : ` cites ${JSON.stringify(example.path.citations.map((c) => c.id))}`}`
+        `${example.path === null ? "" : ` cites ${cites(example.path.citations)}`}`
     )
   }
 }
 
-const program = Effect.gen(function* () {
-  const ontology = yield* loadFhirOntology()
+const main = async (): Promise<void> => {
+  const ontology = loadFhirOntology()
   const world = generateWorld(ontology, { seed: SEED, patients: 20 })
-  yield* loadWorld(world, ontology)
 
-  const notesPath = makeNotesPath(takeNotes(world))
-  const report = yield* runSuite(bindingsFor(world), SqlOracle, notesPath)
+  const store = await openStore()
+  let report: CqReport
+  try {
+    const notesPath = makeNotesPath(takeNotes(world))
+    // runCq loads the world itself ({ ontology } = exact DDL); `templates`
+    // makes the per-template rows reflect OUR three questions, not the
+    // shipped FHIR suite.
+    report = await runCq(store, world, bindingsFor(world), notesPath, { ontology, templates })
+  } finally {
+    store.close()
+  }
 
   showReport(report)
 
   // The demo contract: an imperfect layer must be caught in every planted way —
-  // all three flaws (divergent, unsupported-citation, missing) plus honest matches.
+  // all four verdicts: honest matches, divergent, unsupported-citation, missing.
   const caught =
     report.match > 0 && report.divergent > 0 && report.unsupportedCitation > 0 && report.missing > 0
   console.log("")
@@ -285,6 +293,9 @@ const program = Effect.gen(function* () {
       : "unexpected: the planted flaws were not all caught"
   )
   if (!caught) process.exitCode = 1
-})
+}
 
-program.pipe(Effect.provide(duckDbLayer()), Effect.runPromise)
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error))
+  process.exitCode = 1
+})

@@ -4,12 +4,12 @@
  * Why this validates the ontology: everything downstream (DDL, the SQL oracle,
  * the graph path, mutators) trusts the committed FHIR-derived ontology to be
  * structurally sound. This suite pins (a) the committed top50.json loads and
- * Schema-validates, (b) the payer-critical resources kept the attributes and
- * relations the shipped CQ templates rely on, and (c) referential closure —
- * every relation target is itself a top-50 entity type, which is what makes
- * "referential integrity" a checkable invariant instead of a hope.
+ * validates (50 entity types / 536 attributes / 261 relations), (b) the
+ * payer-critical resources kept the attributes and relations the shipped CQ
+ * templates rely on, and (c) referential closure — every relation target is
+ * itself a top-50 entity type, which is what makes "referential integrity" a
+ * checkable invariant instead of a hope.
  */
-import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   FHIR_TOP50_COUNT,
@@ -21,7 +21,7 @@ import {
 } from "memory-sql"
 import type { Attribute, EntityType, Ontology, Relation } from "memory-sql"
 
-const ontology: Ontology = await Effect.runPromise(loadFhirOntology())
+const ontology: Ontology = loadFhirOntology()
 
 const attr = (et: EntityType, name: string): Attribute => {
   const found = et.attributes.find((a) => a.name === name)
@@ -60,6 +60,13 @@ describe("ontology: committed FHIR top-50", () => {
     ]) {
       expect(getEntityType(ontology, name), name).toBeDefined()
     }
+  })
+
+  it("carries the exact committed totals: 536 attributes and 261 relations", () => {
+    const attributes = ontology.entityTypes.reduce((n, et) => n + et.attributes.length, 0)
+    const relations = ontology.entityTypes.reduce((n, et) => n + et.relations.length, 0)
+    expect(attributes).toBe(536)
+    expect(relations).toBe(261)
   })
 
   it("is structurally valid (validateOntology finds no problems)", () => {

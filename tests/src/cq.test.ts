@@ -8,22 +8,21 @@
  * (b) each *kind* of wrongness maps to its own verdict. So we run the suite
  * once with the reference GraphPath (all match) and then with deliberately
  * broken paths: wrong values must grade `divergent`, fabricated citations
- * `unsupported-citation`, and a path that fails to answer `missing`.
+ * `unsupported-citation`, and a path that fails to answer `missing`. Also
+ * pinned here: the SPEC gate "0 sampled bindings is a failure, not a pass" —
+ * nothing graded is not nothing wrong.
  */
-import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import {
-  PathError,
-  SqlOracle,
+  MemorySqlError,
   bindTemplates,
-  duckDbLayer,
   fhirCqTemplates,
   generateWorld,
   loadFhirOntology,
-  loadWorld,
   makeGraphPath,
   makeRng,
-  runSuite
+  openStore,
+  runCq
 } from "memory-sql"
 import type {
   Answer,
@@ -34,7 +33,7 @@ import type {
   Ontology
 } from "memory-sql"
 
-const ontology: Ontology = await Effect.runPromise(loadFhirOntology())
+const ontology: Ontology = loadFhirOntology()
 const world = generateWorld(ontology, { seed: 42, patients: 10 })
 const graphPath = makeGraphPath(world, ontology)
 
@@ -43,20 +42,18 @@ const SUITE_SIZE = fhirCqTemplates.length * 3
 const bindings = bindTemplates(fhirCqTemplates, world, makeRng(7), SUITE_SIZE)
 
 /** Load the world and grade `path` against the SQL oracle over all bindings. */
-const suite = (path: AnswerPath): Promise<CqReport> =>
-  Effect.runPromise(
-    Effect.provide(
-      Effect.gen(function* () {
-        yield* loadWorld(world, ontology)
-        return yield* runSuite(bindings, SqlOracle, path)
-      }),
-      duckDbLayer()
-    )
-  )
+const suite = async (path: AnswerPath): Promise<CqReport> => {
+  const store = await openStore()
+  try {
+    return await runCq(store, world, bindings, path, { ontology })
+  } finally {
+    store.close()
+  }
+}
 
 describe("cq: binding sampler", () => {
   it("samples every template from real world rows, deterministically", () => {
-    expect(fhirCqTemplates.length).toBeGreaterThanOrEqual(10) // "~12 shipped templates"
+    expect(fhirCqTemplates.length).toBeGreaterThanOrEqual(10) // the 13 shipped templates
     expect(bindings).toHaveLength(SUITE_SIZE)
     const sampledTemplates = new Set(bindings.map((b) => b.template.id))
     expect(sampledTemplates.size).toBe(fhirCqTemplates.length)
@@ -101,6 +98,17 @@ describe("cq: GraphPath vs SqlOracle on the clean world", () => {
     }
   })
 
+  it("makes per-template binding counts visible — no template silently ungraded", async () => {
+    const report = await suite(graphPath)
+    // Every shipped template has an explicit row; round-robin gave each 3.
+    expect(report.byTemplate.map((t) => t.templateId).sort()).toEqual(
+      fhirCqTemplates.map((t) => t.id).sort()
+    )
+    for (const row of report.byTemplate) {
+      expect(row.bindings, row.templateId).toBe(3)
+    }
+  })
+
   it("negative controls answer empty — no fabrication on both paths", async () => {
     const report = await suite(graphPath)
     const controls = report.results.filter((r) => r.regime === "negative-control")
@@ -129,7 +137,7 @@ describe("cq: broken AnswerPaths get the right verdicts", () => {
     }
     const wrongValues: AnswerPath = {
       name: "broken-wrong-values",
-      answer: (binding) => Effect.map(graphPath.answer(binding), corrupt)
+      answer: async (binding) => corrupt(await graphPath.answer(binding))
     }
     const report = await suite(wrongValues)
     expect(report.divergent).toBe(report.total)
@@ -142,11 +150,10 @@ describe("cq: broken AnswerPaths get the right verdicts", () => {
     // must catch it mechanically (citation not in the oracle's support set).
     const fakeCitations: AnswerPath = {
       name: "broken-fake-citations",
-      answer: (binding) =>
-        Effect.map(graphPath.answer(binding), (a) => ({
-          ...a,
-          citations: [{ entityType: "Patient", id: "patient-999-fabricated" }]
-        }))
+      answer: async (binding) => {
+        const a = await graphPath.answer(binding)
+        return { ...a, citations: [{ entityType: "Patient", id: "patient-999-fabricated" }] }
+      }
     }
     const report = await suite(fakeCitations)
     expect(report.unsupportedCitation).toBe(report.total)
@@ -157,7 +164,7 @@ describe("cq: broken AnswerPaths get the right verdicts", () => {
   it("a path that cannot answer -> missing on every binding", async () => {
     const mute: AnswerPath = {
       name: "broken-mute",
-      answer: () => Effect.fail(new PathError({ message: "no memory layer attached" }))
+      answer: () => Promise.reject(new Error("no memory layer attached"))
     }
     const report = await suite(mute)
     expect(report.missing).toBe(report.total)
@@ -165,6 +172,23 @@ describe("cq: broken AnswerPaths get the right verdicts", () => {
     for (const result of report.results) {
       expect(result.path).toBeNull()
       expect(result.pathError).toMatch(/no memory layer/)
+    }
+  })
+})
+
+describe("cq: the 0-binding gate", () => {
+  it("an empty binding list is a failure, never a green report", async () => {
+    const store = await openStore()
+    try {
+      const failure = await runCq(store, world, [], graphPath, { ontology }).then(
+        () => null,
+        (cause: unknown) => cause
+      )
+      expect(failure).toBeInstanceOf(MemorySqlError)
+      expect((failure as MemorySqlError).op).toBe("cq")
+      expect((failure as MemorySqlError).message).toMatch(/0 bindings/)
+    } finally {
+      store.close()
     }
   })
 })

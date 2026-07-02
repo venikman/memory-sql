@@ -10,19 +10,18 @@
  * templates are fixtures of this test, not the shipped FHIR ones (those are
  * cross-checked against the GraphPath in cq.test.ts).
  */
-import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import {
-  DuckDb,
-  SqlOracle,
-  duckDbLayer,
+  MemorySqlError,
   isEmptyAnswer,
   loadWorld,
+  makeSqlOracle,
+  openStore,
   paramPeriod,
   paramString,
   sqlLiteral
 } from "memory-sql"
-import type { Answer, CqBinding, CqTemplate, InstanceWorld } from "memory-sql"
+import type { Answer, CqBinding, CqTemplate, InstanceWorld, Store } from "memory-sql"
 
 // ── Tiny world: 3 patients, 4 conditions, 4 EOBs — small enough to grade by eye ──
 const tiny: InstanceWorld = {
@@ -118,21 +117,27 @@ const bind = (template: CqTemplate, params: CqBinding["params"]): CqBinding => (
   params
 })
 
-/** Load the tiny world (tables inferred from rows) and answer all bindings. */
+/** Run `f` over a fresh store pre-loaded with the tiny world (tables inferred from rows). */
+const withTinyWorld = async <A>(f: (store: Store) => Promise<A>): Promise<A> => {
+  const store = await openStore()
+  try {
+    await loadWorld(store, undefined, tiny)
+    return await f(store)
+  } finally {
+    store.close()
+  }
+}
+
+/** Load the tiny world and answer all bindings with the SQL oracle. */
 const oracleAnswers = (bindings: ReadonlyArray<CqBinding>): Promise<Answer[]> =>
-  Effect.runPromise(
-    Effect.provide(
-      Effect.gen(function* () {
-        yield* loadWorld(tiny)
-        const answers: Answer[] = []
-        for (const binding of bindings) {
-          answers.push(yield* SqlOracle.answer(binding))
-        }
-        return answers
-      }),
-      duckDbLayer()
-    )
-  )
+  withTinyWorld(async (store) => {
+    const oracle = makeSqlOracle(store)
+    const answers: Answer[] = []
+    for (const binding of bindings) {
+      answers.push(await oracle.answer(binding))
+    }
+    return answers
+  })
 
 describe("oracle: hand-computed answers on a tiny world", () => {
   it("set answer: sorted unique ids with matching citations", async () => {
@@ -219,40 +224,38 @@ describe("oracle: hand-computed answers on a tiny world", () => {
 })
 
 describe("oracle: template-bug surfacing", () => {
-  it("fails with OracleError when the SQL breaks the support-set convention", async () => {
+  /** Answer one binding, capturing the rejection (a template bug must throw). */
+  const oracleFailure = (binding: CqBinding): Promise<unknown> =>
+    withTinyWorld((store) =>
+      makeSqlOracle(store)
+        .answer(binding)
+        .then(
+          () => null,
+          (cause: unknown) => cause
+        )
+    )
+
+  it("fails with an op-tagged MemorySqlError when the SQL breaks the support-set convention", async () => {
     const noIdColumn: CqTemplate = {
       ...activeConditions,
       id: "test-no-id-column",
       sql: () => `SELECT clinical_status FROM condition`
     }
-    const error = await Effect.runPromise(
-      Effect.provide(
-        Effect.gen(function* () {
-          yield* loadWorld(tiny)
-          return yield* Effect.flip(SqlOracle.answer(bind(noIdColumn, { patient: "patient-1" })))
-        }),
-        duckDbLayer()
-      )
-    )
-    expect(error._tag).toBe("OracleError")
-    expect(String(error.message)).toMatch(/"id" column/)
+    const error = await oracleFailure(bind(noIdColumn, { patient: "patient-1" }))
+    expect(error).toBeInstanceOf(MemorySqlError)
+    expect((error as MemorySqlError).op).toBe("oracle")
+    expect(String((error as MemorySqlError).message)).toMatch(/"id" column/)
   })
 
-  it("fails with OracleError when the query itself is invalid SQL", async () => {
+  it("fails with an op-tagged MemorySqlError when the query itself is invalid SQL", async () => {
     const brokenSql: CqTemplate = {
       ...activeConditions,
       id: "test-broken-sql",
       sql: () => `SELECT id FROM no_such_table`
     }
-    const error = await Effect.runPromise(
-      Effect.provide(
-        Effect.gen(function* () {
-          yield* loadWorld(tiny)
-          return yield* Effect.flip(SqlOracle.answer(bind(brokenSql, { patient: "patient-1" })))
-        }),
-        duckDbLayer()
-      )
-    )
-    expect(error._tag).toBe("OracleError")
+    const error = await oracleFailure(bind(brokenSql, { patient: "patient-1" }))
+    expect(error).toBeInstanceOf(MemorySqlError)
+    expect((error as MemorySqlError).op).toBe("oracle")
+    expect(String((error as MemorySqlError).message)).toMatch(/oracle query failed/)
   })
 })

@@ -11,7 +11,7 @@ export default defineConfig({
     // DuckDB is a native addon; child-process forks isolate it more reliably
     // than worker threads when several suites each open their own database.
     pool: "forks",
-    // CQ suites + fast-check metamorphic runs do real SQL work per test.
+    // CQ suites + seeded metamorphic runs do real SQL work per test.
     testTimeout: 120_000,
     hookTimeout: 120_000,
     // Determinism: no retry masking — a flaky test is a bug in this product.

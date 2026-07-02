@@ -13,19 +13,16 @@
  *
  * Isolation: imports ONLY the published "memory-sql" surface (by package name).
  */
-import { Effect } from "effect"
 import type { CqReport } from "memory-sql"
 import {
   bindTemplates,
-  duckDbLayer,
   fhirCqTemplates,
   generateWorld,
   loadFhirOntology,
-  loadWorld,
   makeGraphPath,
   makeRng,
-  runSuite,
-  SqlOracle
+  openStore,
+  runCq
 } from "memory-sql"
 
 const SEED = 42
@@ -59,38 +56,47 @@ const showReport = (report: CqReport): void => {
   }
 }
 
-const program = Effect.gen(function* () {
+const main = async (): Promise<void> => {
   // 1. Ontology (FHIR R4 top-50, committed JSON) + deterministic clean world.
-  const ontology = yield* loadFhirOntology()
+  const ontology = loadFhirOntology()
   const world = generateWorld(ontology, { seed: SEED, patients: PATIENTS })
 
-  // 2. Load into DuckDB — one table per entity type, empty tables included
-  //    (negative-control questions must find real, empty tables).
-  yield* loadWorld(world, ontology)
+  const store = await openStore()
+  try {
+    // 2. Monte-Carlo bind the shipped templates against REAL ids/values/dates
+    //    from this world — same seed, same suite, byte-identical report.
+    const bindings = bindTemplates(fhirCqTemplates, world, makeRng(SEED), SUITE_SIZE)
 
-  // 3. Monte-Carlo bind the shipped templates against REAL ids/values/dates
-  //    from this world — same seed, same suite, byte-identical report.
-  const bindings = bindTemplates(fhirCqTemplates, world, makeRng(SEED), SUITE_SIZE)
+    // 3. Answer everything twice (SQL oracle vs GraphPath) and grade. runCq
+    //    loads the world into DuckDB itself; { ontology } gives it exact DDL —
+    //    one table per entity type, empty tables included (negative-control
+    //    questions must find real, empty tables).
+    const report = await runCq(store, world, bindings, makeGraphPath(world, ontology), { ontology })
 
-  // 4. Answer everything twice and grade.
-  const report = yield* runSuite(bindings, SqlOracle, makeGraphPath(world, ontology))
+    showReport(report)
 
-  showReport(report)
-
-  const disagreements = report.results.filter((r) => r.verdict !== "match")
-  if (disagreements.length > 0) {
-    console.log("")
-    console.log("dual-oracle disagreements on the CLEAN world (this is a bug):")
-    for (const r of disagreements) {
-      console.log(`  [${r.verdict}] ${r.question}`)
-      console.log(`    oracle: ${JSON.stringify(r.oracle.value)}`)
-      console.log(`    path:   ${r.path === null ? `(failed: ${r.pathError})` : JSON.stringify(r.path.value)}`)
+    const disagreements = report.results.filter((r) => r.verdict !== "match")
+    if (disagreements.length > 0) {
+      console.log("")
+      console.log("dual-oracle disagreements on the CLEAN world (this is a bug):")
+      for (const r of disagreements) {
+        console.log(`  [${r.verdict}] ${r.question}`)
+        console.log(`    oracle: ${JSON.stringify(r.oracle.value)}`)
+        console.log(
+          `    path:   ${r.path === null ? `(failed: ${r.pathError})` : JSON.stringify(r.path.value)}`
+        )
+      }
+      process.exitCode = 1
+    } else {
+      console.log("")
+      console.log("clean world: SQL oracle and GraphPath agree on every binding.")
     }
-    process.exitCode = 1
-  } else {
-    console.log("")
-    console.log("clean world: SQL oracle and GraphPath agree on every binding.")
+  } finally {
+    store.close()
   }
-})
+}
 
-program.pipe(Effect.provide(duckDbLayer()), Effect.runPromise)
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error))
+  process.exitCode = 1
+})

@@ -10,7 +10,6 @@
  * the ontology metadata — an independent check that does not go through the
  * sim engine.
  */
-import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   REFERENCE_DATE,
@@ -24,7 +23,7 @@ import {
 } from "memory-sql"
 import type { InstanceWorld, Ontology } from "memory-sql"
 
-const ontology: Ontology = await Effect.runPromise(loadFhirOntology())
+const ontology: Ontology = loadFhirOntology()
 
 describe("synth: determinism", () => {
   it("same seed => deep-equal worlds", () => {

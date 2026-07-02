@@ -1,17 +1,17 @@
 {
   "name": "memory-sql-tests",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
-    "effect": "^3.21.4",
     "memory-sql": "file:../packages/core"
   },
   "devDependencies": {
+    "effect": "^3.21.4",
     "vitest": "^4.1.9"
   }
 }

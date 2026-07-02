@@ -11,26 +11,32 @@
  * asymmetry: a duplicate-id world cannot even load (id is a real PRIMARY
  * KEY), so unique-ids must be caught on the world, pre-store.
  */
-import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import {
-  duckDbLayer,
   duplicateIdMutator,
   fhirInvariants,
   fhirStressMutators,
   generateWorld,
   loadFhirOntology,
   makeRng,
+  openStore,
   replay,
   runStress
 } from "memory-sql"
-import type { DuckDb, InstanceWorld, Ontology, StressReport } from "memory-sql"
+import type { InstanceWorld, Ontology, ReplayResult, StressReport } from "memory-sql"
 
-const ontology: Ontology = await Effect.runPromise(loadFhirOntology())
+const ontology: Ontology = loadFhirOntology()
 const world: InstanceWorld = generateWorld(ontology, { seed: 42, patients: 6 })
 
-const withDb = <A, E>(effect: Effect.Effect<A, E, DuckDb>): Promise<A> =>
-  Effect.runPromise(Effect.provide(effect, duckDbLayer()))
+/** Replay a world against the invariants over a fresh store (closed on settle). */
+const replayWorld = async (w: InstanceWorld): Promise<ReplayResult> => {
+  const store = await openStore()
+  try {
+    return await replay(store, w, ontology, fhirInvariants)
+  } finally {
+    store.close()
+  }
+}
 
 /** SPEC-named mutators and the invariant each one MUST trip (the matrix diagonal). */
 const SPEC_DIAGONAL: ReadonlyArray<readonly [mutator: string, invariant: string]> = [
@@ -71,7 +77,7 @@ describe("stress: shipped surface", () => {
 
 describe("stress: replay", () => {
   it("clean world -> zero violations, clean load, nothing skipped", async () => {
-    const result = await withDb(replay(world, ontology, fhirInvariants))
+    const result = await replayWorld(world)
     expect(result.violations).toEqual([])
     expect(result.firedInvariants).toEqual([])
     expect(result.loadError).toBeNull()
@@ -81,7 +87,7 @@ describe("stress: replay", () => {
   it("duplicate-id worlds fail the load (PRIMARY KEY) yet still convict via the world invariant", async () => {
     const mutation = duplicateIdMutator.mutate(ontology, world, makeRng(1))
     expect(mutation).not.toBeNull()
-    const result = await withDb(replay(mutation!.world, ontology))
+    const result = await replayWorld(mutation!.world)
     // unique-ids is a world-kind invariant: it must fire without the store.
     expect(result.firedInvariants).toContain("unique-ids")
     // The store refuses the world outright, and SQL invariants report skipped
@@ -94,7 +100,7 @@ describe("stress: replay", () => {
 
 describe("stress: the mutator x invariant matrix", () => {
   it("clean row is silent and every mutator trips its named invariant", async () => {
-    const report: StressReport = await withDb(runStress({ ontology, world, seed: 2026 }))
+    const report: StressReport = await runStress(ontology, { world, seed: 2026 })
 
     expect(report.cleanPassed).toBe(true)
     expect(report.clean.violations).toEqual([])
@@ -117,7 +123,7 @@ describe("stress: the mutator x invariant matrix", () => {
   })
 
   it("defects are surgical: no mutator sets the clean-world baseline on fire", async () => {
-    const report = await withDb(runStress({ ontology, world, seed: 2026 }))
+    const report = await runStress(ontology, { world, seed: 2026 })
     for (const run of report.runs) {
       // One planted defect must not light up more than a few invariants —
       // a defect that fires half the matrix means invariants are entangled.
@@ -129,8 +135,21 @@ describe("stress: the mutator x invariant matrix", () => {
   })
 
   it("is deterministic: same seed, same world, same matrix", async () => {
-    const a = await withDb(runStress({ ontology, world, seed: 7 }))
-    const b = await withDb(runStress({ ontology, world, seed: 7 }))
+    const a = await runStress(ontology, { world, seed: 7 })
+    const b = await runStress(ontology, { world, seed: 7 })
     expect(a).toEqual(b)
+  })
+
+  it("accepts a caller-owned store and leaves it open", async () => {
+    const store = await openStore()
+    try {
+      const report = await runStress(ontology, { world, seed: 3, store })
+      expect(report.cleanPassed).toBe(true)
+      // The store is still usable — runStress must not close what it did not open.
+      const result = await store.query(`SELECT COUNT(*) FROM "patient"`)
+      expect(Number(result.rows[0]?.[0])).toBeGreaterThan(0)
+    } finally {
+      store.close()
+    }
   })
 })

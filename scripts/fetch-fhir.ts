@@ -12,7 +12,7 @@
  * The output is deliberately deterministic (no timestamps): re-running the script
  * against the same spec release produces a byte-identical file.
  *
- * ── Trimming / flattening rules (mirrored in packages/core/src/ontology/model.ts) ──
+ * ── Trimming / flattening rules (mirrored in packages/core/src/ontology.ts) ──
  * 1. Only depth-1 elements (Resource.field) are considered, plus an explicit
  *    whitelist of backbone leaves that carry payer-critical joins/amounts
  *    (e.g. Claim.insurance.coverage, ExplanationOfBenefit.payment.amount).
@@ -60,8 +60,6 @@
  * Usage: npm run fetch-fhir            (network required)
  *        FHIR_CACHE_DIR=/tmp/fhir npm run fetch-fhir   (cache downloads there)
  */
-import { NodeRuntime } from "@effect/platform-node"
-import { Config, Console, Data, Effect, Option } from "effect"
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
 
@@ -408,49 +406,34 @@ const trimResource = (
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Effectful shell
+// Plain async shell (SPEC v2: scripts must not import effect)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class FetchFhirError extends Data.TaggedError("FetchFhirError")<{
-  readonly message: string
-  readonly cause?: unknown
-}> {}
-
 /** Fetch a JSON document, optionally caching it on disk under FHIR_CACHE_DIR. */
-const loadJson = (url: string, cacheDir: Option.Option<string>, cacheName: string): Effect.Effect<unknown, FetchFhirError> =>
-  Effect.gen(function* () {
-    if (Option.isSome(cacheDir)) {
-      const cached = yield* Effect.tryPromise({
-        try: () => fs.readFile(path.join(cacheDir.value, cacheName), "utf8"),
-        catch: () => new FetchFhirError({ message: "cache miss" })
-      }).pipe(Effect.option)
-      if (Option.isSome(cached)) return JSON.parse(cached.value) as unknown
+const loadJson = async (url: string, cacheDir: string | undefined, cacheName: string): Promise<unknown> => {
+  if (cacheDir !== undefined) {
+    try {
+      const cached = await fs.readFile(path.join(cacheDir, cacheName), "utf8")
+      return JSON.parse(cached) as unknown
+    } catch {
+      // cache miss — fall through to the network
     }
-    const body = yield* Effect.tryPromise({
-      try: async () => {
-        const res = await fetch(url)
-        if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`)
-        return await res.text()
-      },
-      catch: (cause) => new FetchFhirError({ message: `download failed: ${url}`, cause })
-    })
-    if (Option.isSome(cacheDir)) {
-      yield* Effect.tryPromise({
-        try: async () => {
-          await fs.mkdir(cacheDir.value, { recursive: true })
-          await fs.writeFile(path.join(cacheDir.value, cacheName), body, "utf8")
-        },
-        catch: (cause) => new FetchFhirError({ message: `cache write failed: ${cacheName}`, cause })
-      })
-    }
-    return JSON.parse(body) as unknown
-  })
+  }
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`download failed: ${url} (HTTP ${res.status})`)
+  const body = await res.text()
+  if (cacheDir !== undefined) {
+    await fs.mkdir(cacheDir, { recursive: true })
+    await fs.writeFile(path.join(cacheDir, cacheName), body, "utf8")
+  }
+  return JSON.parse(body) as unknown
+}
 
-const program = Effect.gen(function* () {
-  const cacheDir = yield* Config.option(Config.string("FHIR_CACHE_DIR"))
-  yield* Console.log(`fetching FHIR R4 definitions (source: ${PROFILES_URL})`)
-  const profiles = (yield* loadJson(PROFILES_URL, cacheDir, "profiles-resources.json")) as Bundle
-  const valuesetsBundle = (yield* loadJson(VALUESETS_URL, cacheDir, "valuesets.json")) as Bundle
+const main = async (): Promise<void> => {
+  const cacheDir = process.env["FHIR_CACHE_DIR"]
+  console.log(`fetching FHIR R4 definitions (source: ${PROFILES_URL})`)
+  const profiles = (await loadJson(PROFILES_URL, cacheDir, "profiles-resources.json")) as Bundle
+  const valuesetsBundle = (await loadJson(VALUESETS_URL, cacheDir, "valuesets.json")) as Bundle
 
   const sds = new Map<string, StructureDefinition>()
   for (const entry of profiles.entry ?? []) {
@@ -462,7 +445,7 @@ const program = Effect.gen(function* () {
   }
   const missing = TOP50.filter((n) => !sds.has(n))
   if (missing.length > 0) {
-    return yield* new FetchFhirError({ message: `StructureDefinitions missing from bundle: ${missing.join(", ")}` })
+    throw new Error(`StructureDefinitions missing from bundle: ${missing.join(", ")}`)
   }
 
   const { valueSets, codeSystems } = indexValueSets(valuesetsBundle)
@@ -487,17 +470,17 @@ const program = Effect.gen(function* () {
     resources
   }
   const json = JSON.stringify(out, null, 1)
-  yield* Effect.tryPromise({
-    try: () => fs.writeFile(OUT_PATH, json, "utf8"),
-    catch: (cause) => new FetchFhirError({ message: `write failed: ${OUT_PATH.pathname}`, cause })
-  })
+  await fs.writeFile(OUT_PATH, json, "utf8")
 
   const attrTotal = resources.reduce((n, r) => n + r.attributes.length, 0)
   const relTotal = resources.reduce((n, r) => n + r.relations.length, 0)
-  yield* Console.log(
+  console.log(
     `wrote ${OUT_PATH.pathname}: ${resources.length} resources, ` +
     `${attrTotal} attributes, ${relTotal} relations, ${(json.length / 1024).toFixed(1)} KiB`
   )
-})
+}
 
-NodeRuntime.runMain(program)
+main().catch((err: unknown) => {
+  console.error(`fetch-fhir failed: ${err instanceof Error ? err.message : String(err)}`)
+  process.exitCode = 1
+})

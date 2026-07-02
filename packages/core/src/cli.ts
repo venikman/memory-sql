@@ -1,326 +1,281 @@
 #!/usr/bin/env node
 /**
- * memory-sql CLI (@effect/cli):
- *
- *   memory-sql synth --seed 42 --patients 20 --out world.json
- *   memory-sql cq    --seed 42 [--world world.json] [--n 50]
- *   memory-sql sim   --seed 42 [--mrs 200]
- *
+ * memory-sql CLI — node:util parseArgs, plain async main (SPEC v2).
  * `synth` writes a deterministic clean world; `cq` runs the Stage 1
- * dual-oracle suite (GraphPath vs SqlOracle); `sim` runs Stage 2 (metamorphic
- * relations + adversarial stress). CI-gate semantics per SPEC: any divergence
- * or violation exits 1 — a green exit code IS the validation result. Domain
- * errors are mapped to one-line friendly messages (no defect dumps); the
- * runtime only sees already-handled effects.
- *
- * Determinism: everything flows from --seed; no wall clock anywhere.
+ * dual-oracle suite (GraphPath vs the SQL oracle); `sim` runs Stage 2
+ * (metamorphic relations + adversarial stress). CI-gate semantics, unchanged
+ * from v1: exit 0 = pass; exit 1 on any divergence or violation, on 0 sampled
+ * bindings ("nothing graded is not nothing wrong"), on a rejected/degenerate
+ * world, and on any expected failure — always a friendly one-line error,
+ * never a stack trace. Determinism: everything flows from --seed; no wall
+ * clock anywhere.
  */
-import { Command, Options } from "@effect/cli"
-import { isValidationError } from "@effect/cli/ValidationError"
-import { FileSystem } from "@effect/platform"
-import { NodeContext, NodeRuntime } from "@effect/platform-node"
-import { Console, Effect, Option, Schema } from "effect"
-import { loadFhirOntology } from "./ontology/fhir.js"
-import type { Ontology } from "./ontology/model.js"
-import { duckDbLayer } from "./store/db.js"
-import type { InstanceWorld } from "./store/load.js"
-import { loadWorld } from "./store/load.js"
-import { generateWorld } from "./synth/generate.js"
-import { makeRng } from "./synth/rng.js"
-import { SqlOracle } from "./oracle/sql.js"
-import type { CqReport } from "./cq/engine.js"
-import { bindTemplates, runSuite } from "./cq/engine.js"
-import { makeGraphPath } from "./cq/graph-path.js"
-import { fhirCqTemplates } from "./cq/templates.js"
-import { formatMetamorphicReport, runMetamorphic } from "./sim/metamorphic.js"
-import { formatStressReport, runStress } from "./sim/stress.js"
+import { readFile, writeFile } from "node:fs/promises"
+import { parseArgs } from "node:util"
+import type { CqReport, InstanceWorld } from "./index.js"
+import {
+  bindTemplates,
+  fhirCqTemplates,
+  formatCqReport,
+  formatMetamorphicReport,
+  formatStressReport,
+  generateWorld,
+  loadFhirOntology,
+  makeGraphPath,
+  makeRng,
+  MemorySqlError,
+  openStore,
+  runCq,
+  runMetamorphic,
+  runStress
+} from "./index.js"
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared options + helpers
-// ─────────────────────────────────────────────────────────────────────────────
+const USAGE = `memory-sql — ontology-backed SQL memory layer with built-in validation (FHIR R4 top-50 over DuckDB)
 
-const seedOption = Options.integer("seed").pipe(
-  Options.withAlias("s"),
-  Options.withDefault(42),
-  Options.withDescription("PRNG seed — same seed, same world, same report")
-)
+Usage:
+  memory-sql synth [--seed N] [--patients N] [--out FILE]    generate a deterministic, referentially consistent world
+  memory-sql cq    [--seed N] [--world FILE] [--bindings N]  run the CQ dual-oracle suite (exit 1 on any divergence)
+  memory-sql sim   [--seed N] [--mrs N]                      run metamorphic + stress engines (exit 1 on violations)
 
-const pct = (x: number): string => `${(x * 100).toFixed(1)}%`
+Flags:
+  -s, --seed N      PRNG seed — same seed, same world, same report (default 42)
+  -p, --patients N  cohort size; patient-scoped resources scale with it (default 20)
+  -o, --out FILE    output path for the generated InstanceWorld JSON (default world.json)
+      --world FILE  InstanceWorld JSON to grade against (default: generate from --seed)
+  -n, --bindings N  number of Monte-Carlo sampled bindings (default 50)
+      --mrs N       property runs per metamorphic relation (default 200)
 
-/**
- * Friendly tagged-error mapping: every domain failure becomes one actionable
- * line + exit 1, instead of a fiber failure dump. Defects (real bugs) still
- * crash loudly through the runtime.
- */
-const explain = (error: unknown): string => {
-  const tag =
-    error !== null && typeof error === "object" && "_tag" in error
-      ? String((error as { readonly _tag: unknown })._tag)
-      : "Error"
-  const message =
-    error !== null && typeof error === "object" && "message" in error
-      ? String((error as { readonly message: unknown }).message)
-      : String(error)
-  const hint =
-    tag === "FhirLoadError"
-      ? " (fhir-data/top50.json is committed — re-derive with `npm run fetch-fhir`)"
-      : tag === "DbError"
-        ? " (DuckDB rejected a statement over the loaded world)"
-        : tag === "OracleError"
-          ? " (a CQ template's ground-truth SQL failed — this is a template bug, not a path failure)"
-          : tag === "ParseError"
-            ? " (--world file is not a valid InstanceWorld JSON — produce one with `memory-sql synth`)"
-            : ""
-  return `memory-sql: [${tag}] ${message}${hint}`
-}
+Exit codes: 0 = pass; 1 = divergences/violations, an empty suite, or any expected failure.`
 
-const friendly = <E, R>(effect: Effect.Effect<void, E, R>): Effect.Effect<void, never, R> =>
-  effect.pipe(
-    Effect.catchAll((error) =>
-      Console.error(explain(error)).pipe(
-        Effect.zipRight(Effect.sync(() => {
-          process.exitCode = 1
-        }))
-      )
-    )
-  )
-
-/** Findings fail the run (CI-gate semantics) without aborting the printout. */
-const failRun = (message: string): Effect.Effect<void> =>
-  Console.log(message).pipe(
-    Effect.zipRight(Effect.sync(() => {
-      process.exitCode = 1
-    }))
-  )
-
-const worldStats = (world: InstanceWorld): { readonly types: number; readonly rows: number } => {
-  const lists = Object.values(world)
-  return { types: lists.length, rows: lists.reduce((n, rows) => n + rows.length, 0) }
-}
-
-// The --world parse boundary: whatever JSON comes in is Schema-validated down
-// to the store's scalar domain before it is allowed near the engines.
-const InstanceWorldSchema = Schema.Record({
-  key: Schema.String,
-  value: Schema.Array(
-    Schema.Record({
-      key: Schema.String,
-      value: Schema.NullOr(Schema.Union(Schema.String, Schema.Number, Schema.Boolean))
-    })
-  )
-})
-
-const readWorldFile = (path: string): Effect.Effect<InstanceWorld, unknown, FileSystem.FileSystem> =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem
-    const text = yield* fs.readFileString(path)
-    return yield* Schema.decodeUnknown(Schema.parseJson(InstanceWorldSchema))(text)
-  })
-
-const worldFor = (
-  ontology: Ontology,
-  seed: number,
-  worldPath: Option.Option<string>
-): Effect.Effect<InstanceWorld, unknown, FileSystem.FileSystem> =>
-  Option.match(worldPath, {
-    onNone: () => Effect.succeed(generateWorld(ontology, { seed })),
-    onSome: readWorldFile
-  })
-
-// ─────────────────────────────────────────────────────────────────────────────
-// synth — write a deterministic clean world to JSON
-// ─────────────────────────────────────────────────────────────────────────────
-
-const patientsOption = Options.integer("patients").pipe(
-  Options.withAlias("p"),
-  Options.withDefault(20),
-  Options.withDescription("cohort size (patient-scoped resources scale with it)")
-)
-
-const outOption = Options.file("out").pipe(
-  Options.withAlias("o"),
-  Options.withDefault("world.json"),
-  Options.withDescription("output path for the generated InstanceWorld JSON")
-)
-
-const synthCommand = Command.make(
-  "synth",
-  { seed: seedOption, patients: patientsOption, out: outOption },
-  ({ out, patients, seed }) =>
-    friendly(
-      Effect.gen(function* () {
-        const ontology = yield* loadFhirOntology()
-        const world = generateWorld(ontology, { seed, patients })
-        const fs = yield* FileSystem.FileSystem
-        yield* fs.writeFileString(out, JSON.stringify(world, null, 2))
-        const { rows, types } = worldStats(world)
-        yield* Console.log(
-          `synth: ${rows} rows across ${types} entity types (seed ${seed}, ${patients} patients) -> ${out}`
-        )
-      })
-    )
-).pipe(Command.withDescription("generate a deterministic, referentially consistent world"))
-
-// ─────────────────────────────────────────────────────────────────────────────
-// cq — Stage 1: dual-oracle suite, GraphPath vs SqlOracle
-// ─────────────────────────────────────────────────────────────────────────────
-
-const worldOption = Options.file("world", { exists: "yes" }).pipe(
-  Options.optional,
-  Options.withDescription("InstanceWorld JSON to grade against (default: generate from --seed)")
-)
-
-const suiteSizeOption = Options.integer("bindings").pipe(
-  Options.withAlias("n"),
-  Options.withDefault(50),
-  Options.withDescription("number of Monte-Carlo sampled bindings (-n 50)")
-)
-
-const renderCqReport = (report: CqReport): Effect.Effect<void> =>
-  Effect.gen(function* () {
-    yield* Console.log(
-      `cq: path "${report.pathName}" vs SqlOracle — ${report.total} bindings over ${fhirCqTemplates.length} templates`
-    )
-    yield* Console.log(
-      `  match ${report.match}  missing ${report.missing}  divergent ${report.divergent}  unsupported-citation ${report.unsupportedCitation}`
-    )
-    yield* Console.log(
-      `  answerable ${pct(report.answerableRate)}  agreement ${pct(report.agreementRate)}  citations-resolve ${pct(report.citationResolvesRate)}`
-    )
-    for (const r of report.byRegime) {
-      yield* Console.log(
-        `  ${r.regime.padEnd(18)} total ${String(r.total).padStart(3)}  match ${String(r.match).padStart(3)}  agreement ${pct(r.agreementRate)}`
-      )
-    }
-  })
-
+const DEFAULT_SEED = 42
+const DEFAULT_PATIENTS = 20
+const DEFAULT_BINDINGS = 50
+const DEFAULT_MRS = 200
+/** Bindings the metamorphic properties draw from (the runner picks indices). */
+const SIM_BINDING_COUNT = 50
 const MAX_FINDINGS_SHOWN = 10
 
-const cqCommand = Command.make(
-  "cq",
-  { seed: seedOption, world: worldOption, n: suiteSizeOption },
-  ({ n, seed, world: worldPath }) =>
-    friendly(
-      Effect.gen(function* () {
-        const ontology = yield* loadFhirOntology()
-        const world = yield* worldFor(ontology, seed, worldPath)
-        const bindings = bindTemplates(fhirCqTemplates, world, makeRng(seed), n)
+// ── Flag parsing (node:util parseArgs — no CLI framework per SPEC v2) ────────
 
-        // A degenerate world (empty or missing entity pools) silently drops
-        // bindings; the gate must distinguish "nothing wrong" from "nothing
-        // graded" — a green exit code IS the validation result (SPEC).
-        if (bindings.length === 0) {
-          yield* failRun(
-            "cq: FAIL — 0 bindings could be sampled from this world (empty or missing entity pools); nothing was graded"
-          )
-          return
-        }
-        const unsampled = fhirCqTemplates.filter((t) => !bindings.some((b) => b.template.id === t.id))
-        if (unsampled.length > 0) {
-          yield* Console.log(
-            `cq: WARNING — ${unsampled.length} of ${fhirCqTemplates.length} templates produced no binding on this world and go ungraded: ${unsampled.map((t) => t.id).join(", ")}`
-          )
-        }
+type FlagSpec = Readonly<Record<string, { readonly type: "string"; readonly short?: string }>>
 
-        const report = yield* Effect.gen(function* () {
-          yield* loadWorld(world, ontology)
-          return yield* runSuite(bindings, SqlOracle, makeGraphPath(world, ontology))
-        }).pipe(Effect.provide(duckDbLayer()))
-
-        yield* renderCqReport(report)
-
-        const findings = report.results.filter((r) => r.verdict !== "match")
-        if (findings.length === 0) {
-          yield* Console.log("cq: PASS — the two oracles agree on every binding")
-          return
-        }
-        for (const r of findings.slice(0, MAX_FINDINGS_SHOWN)) {
-          yield* Console.log(`  [${r.verdict}] (${r.templateId}) ${r.question}`)
-          yield* Console.log(`    oracle ${JSON.stringify(r.oracle.value)}`)
-          yield* Console.log(
-            `    path   ${r.path === null ? `failed: ${r.pathError}` : JSON.stringify(r.path.value)}`
-          )
-        }
-        if (findings.length > MAX_FINDINGS_SHOWN) {
-          yield* Console.log(`  ... and ${findings.length - MAX_FINDINGS_SHOWN} more`)
-        }
-        yield* failRun(`cq: FAIL — ${findings.length} of ${report.total} bindings did not match`)
-      })
+/** Parse the flags of one subcommand; unknown flags become a friendly error. */
+const parsedFlags = <T extends FlagSpec>(args: readonly string[], options: T): { readonly [K in keyof T]: string | undefined } => {
+  try {
+    const { values } = parseArgs({ args: [...args], options, allowPositionals: false })
+    return values as unknown as { readonly [K in keyof T]: string | undefined }
+  } catch (cause) {
+    throw new MemorySqlError(
+      "cli",
+      `${cause instanceof Error ? cause.message : String(cause)} — run \`memory-sql --help\` for usage`,
+      cause
     )
-).pipe(Command.withDescription("run the CQ dual-oracle suite (exit 1 on any divergence)"))
+  }
+}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// sim — Stage 2: metamorphic relations + adversarial stress
-// ─────────────────────────────────────────────────────────────────────────────
+const intFlag = (name: string, raw: string | undefined, fallback: number): number => {
+  if (raw === undefined) return fallback
+  const value = Number(raw)
+  if (!Number.isSafeInteger(value)) throw new MemorySqlError("cli", `--${name} expects an integer, got "${raw}"`)
+  return value
+}
 
-const mrsOption = Options.integer("mrs").pipe(
-  Options.withDefault(200),
-  Options.withDescription("fast-check runs per metamorphic relation")
-)
+/** Every expected error becomes one friendly, actionable line + exit 1 — never a stack trace. */
+const explain = (error: unknown): string =>
+  error instanceof MemorySqlError
+    ? `memory-sql: [${error.op}] ${error.message}`
+    : `memory-sql: ${error instanceof Error ? error.message : String(error)}`
 
-/** Bindings the metamorphic properties draw from (fast-check picks indices). */
-const SIM_BINDING_COUNT = 50
+/** A finding fails the run (CI-gate semantics) without aborting the printout. */
+const failRun = (message: string): void => {
+  console.log(message)
+  process.exitCode = 1
+}
 
-const simCommand = Command.make(
-  "sim",
-  { seed: seedOption, mrs: mrsOption },
-  ({ mrs, seed }) =>
-    friendly(
-      Effect.gen(function* () {
-        const ontology = yield* loadFhirOntology()
-        const world = generateWorld(ontology, { seed })
+// ── --world boundary: incoming JSON is validated down to the store's scalar
+// domain before it gets near the engines (per-column type validation against
+// the ontology then happens in loadWorld). ──────────────────────────────────
 
-        // (a) metamorphic: label-free relations, fast-check over sampled
-        // bindings, GraphPath as the answer layer under test
-        const metamorphic = yield* runMetamorphic({
-          ontology,
-          world,
-          bindings: bindTemplates(fhirCqTemplates, world, makeRng(seed), SIM_BINDING_COUNT),
-          makePath: (w) => makeGraphPath(w, ontology),
-          oracle: SqlOracle,
-          seed,
-          runsPerRelation: mrs
-        }).pipe(Effect.provide(duckDbLayer()))
-        yield* Console.log(formatMetamorphicReport(metamorphic))
+const isScalar = (value: unknown): value is string | number | boolean | null =>
+  value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean"
 
-        // (b) stress: mutator x invariant matrix — the clean world must be
-        // silent, every planted defect must be caught
-        const stress = yield* runStress({ ontology, world, seed }).pipe(
-          Effect.provide(duckDbLayer())
-        )
-        yield* Console.log(formatStressReport(stress))
+const parseWorld = (raw: unknown, path: string): InstanceWorld => {
+  const bad = (detail: string): MemorySqlError => new MemorySqlError("parse", `--world file ${path}: ${detail}`)
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw bad("expected an object mapping entity type -> array of rows")
+  }
+  for (const [entityType, rows] of Object.entries(raw)) {
+    if (!Array.isArray(rows)) throw bad(`"${entityType}" must map to an array of rows`)
+    for (const [i, row] of rows.entries()) {
+      if (row === null || typeof row !== "object" || Array.isArray(row)) {
+        throw bad(`${entityType}[${i}] must be an object of column -> scalar`)
+      }
+      for (const [column, value] of Object.entries(row as Record<string, unknown>)) {
+        if (!isScalar(value)) throw bad(`${entityType}[${i}].${column} must be string | number | boolean | null`)
+      }
+    }
+  }
+  return raw as InstanceWorld
+}
 
-        if (metamorphic.passed && stress.passed) {
-          yield* Console.log(
-            "sim: PASS — relations hold, clean world is silent, every mutator was caught"
-          )
-        } else {
-          yield* failRun("sim: FAIL — see the reports above")
-        }
-      })
+const readWorldFile = async (path: string): Promise<InstanceWorld> => {
+  let text: string
+  try {
+    text = await readFile(path, "utf8")
+  } catch (cause) {
+    throw new MemorySqlError("parse", `cannot read --world file ${path}`, cause)
+  }
+  let raw: unknown
+  try {
+    raw = JSON.parse(text) as unknown
+  } catch (cause) {
+    throw new MemorySqlError("parse", `--world file ${path} is not valid JSON`, cause)
+  }
+  return parseWorld(raw, path)
+}
+
+// ── synth — write a deterministic clean world to JSON ────────────────────────
+
+const synthCommand = async (args: readonly string[]): Promise<void> => {
+  const flags = parsedFlags(args, {
+    seed: { type: "string", short: "s" },
+    patients: { type: "string", short: "p" },
+    out: { type: "string", short: "o" }
+  })
+  const seed = intFlag("seed", flags.seed, DEFAULT_SEED)
+  const patients = intFlag("patients", flags.patients, DEFAULT_PATIENTS)
+  const out = flags.out ?? "world.json"
+
+  const world = generateWorld(loadFhirOntology(), { seed, patients })
+  await writeFile(out, JSON.stringify(world, null, 2))
+  const lists = Object.values(world)
+  const rows = lists.reduce((n, list) => n + list.length, 0)
+  console.log(`synth: ${rows} rows across ${lists.length} entity types (seed ${seed}, ${patients} patients) -> ${out}`)
+}
+
+// ── cq — Stage 1: dual-oracle suite, GraphPath vs the SQL oracle ─────────────
+
+const cqCommand = async (args: readonly string[]): Promise<void> => {
+  const flags = parsedFlags(args, {
+    seed: { type: "string", short: "s" },
+    world: { type: "string" },
+    bindings: { type: "string", short: "n" }
+  })
+  const seed = intFlag("seed", flags.seed, DEFAULT_SEED)
+  const n = intFlag("bindings", flags.bindings, DEFAULT_BINDINGS)
+
+  const ontology = loadFhirOntology()
+  const world = flags.world === undefined ? generateWorld(ontology, { seed }) : await readWorldFile(flags.world)
+  const bindings = bindTemplates(fhirCqTemplates, world, makeRng(seed), n)
+
+  // A degenerate world (empty or missing entity pools) silently drops
+  // bindings; the gate must distinguish "nothing wrong" from "nothing graded"
+  // — a green exit code IS the validation result (SPEC).
+  if (bindings.length === 0) {
+    failRun(
+      n === 0
+        ? "cq: FAIL — --bindings 0 requested; nothing was graded, and nothing graded is not nothing wrong"
+        : "cq: FAIL — 0 bindings could be sampled from this world (empty or missing entity pools); nothing was graded"
     )
-).pipe(Command.withDescription("run metamorphic + stress engines (exit 1 on violations)"))
+    return
+  }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// wire + run
-// ─────────────────────────────────────────────────────────────────────────────
+  // runCq loads the world itself; { ontology } gives it exact DDL (all tables
+  // exist, even empty ones — negative-control questions depend on that).
+  const store = await openStore()
+  let report: CqReport
+  try {
+    report = await runCq(store, world, bindings, makeGraphPath(world, ontology), { ontology })
+  } finally {
+    store.close()
+  }
 
-const root = Command.make("memory-sql").pipe(
-  Command.withDescription(
-    "ontology-backed SQL memory layer with built-in validation (FHIR R4 top-50 over DuckDB)"
-  ),
-  Command.withSubcommands([synthCommand, cqCommand, simCommand])
-)
+  console.log(formatCqReport(report))
 
-const cli = Command.run(root, { name: "memory-sql", version: "0.1.0" })
+  const findings = report.results.filter((r) => r.verdict !== "match")
+  if (findings.length === 0) {
+    console.log("cq: PASS — the two oracles agree on every binding")
+    return
+  }
+  for (const r of findings.slice(0, MAX_FINDINGS_SHOWN)) {
+    console.log(`  [${r.verdict}] (${r.templateId}) ${r.question}`)
+    console.log(`    oracle ${JSON.stringify(r.oracle.value)}`)
+    console.log(`    path   ${r.path === null ? `failed: ${r.pathError}` : JSON.stringify(r.path.value)}`)
+  }
+  if (findings.length > MAX_FINDINGS_SHOWN) {
+    console.log(`  ... and ${findings.length - MAX_FINDINGS_SHOWN} more`)
+  }
+  failRun(`cq: FAIL — ${findings.length} of ${report.total} bindings did not match`)
+}
 
-cli(process.argv).pipe(
-  // CliApp already rendered the usage error; just carry the exit code.
-  Effect.catchIf(isValidationError, () =>
-    Effect.sync(() => {
-      process.exitCode = 1
+// ── sim — Stage 2: metamorphic relations + adversarial stress ────────────────
+
+const simCommand = async (args: readonly string[]): Promise<void> => {
+  const flags = parsedFlags(args, {
+    seed: { type: "string", short: "s" },
+    mrs: { type: "string" }
+  })
+  const seed = intFlag("seed", flags.seed, DEFAULT_SEED)
+  const mrs = intFlag("mrs", flags.mrs, DEFAULT_MRS)
+
+  const ontology = loadFhirOntology()
+  const world = generateWorld(ontology, { seed })
+
+  // (a) metamorphic: label-free relations over sampled bindings, the GraphPath
+  // as the answer layer under test. Fresh store per engine run — hermetic.
+  const store = await openStore()
+  let metamorphic: Awaited<ReturnType<typeof runMetamorphic>>
+  try {
+    metamorphic = await runMetamorphic(store, world, {
+      ontology,
+      bindings: bindTemplates(fhirCqTemplates, world, makeRng(seed), SIM_BINDING_COUNT),
+      makePath: (w: InstanceWorld) => makeGraphPath(w, ontology),
+      seed,
+      runsPerRelation: mrs
     })
-  ),
-  Effect.provide(NodeContext.layer),
-  NodeRuntime.runMain
-)
+  } finally {
+    store.close()
+  }
+  console.log(formatMetamorphicReport(metamorphic))
+
+  // (b) stress: mutator x invariant matrix — the clean world must be silent,
+  // every planted defect must be caught (runStress opens its own store).
+  const stress = await runStress(ontology, { seed, world })
+  console.log(formatStressReport(stress))
+
+  if (metamorphic.passed && stress.passed) {
+    console.log("sim: PASS — relations hold, clean world is silent, every mutator was caught")
+  } else {
+    failRun("sim: FAIL — see the reports above")
+  }
+}
+
+// ── dispatch + run ───────────────────────────────────────────────────────────
+
+const main = async (argv: readonly string[]): Promise<void> => {
+  const [command, ...rest] = argv
+  switch (command) {
+    case undefined:
+      console.log(USAGE)
+      process.exitCode = 1
+      return
+    case "-h":
+    case "--help":
+    case "help":
+      console.log(USAGE)
+      return
+    case "synth":
+      return synthCommand(rest)
+    case "cq":
+      return cqCommand(rest)
+    case "sim":
+      return simCommand(rest)
+    default:
+      throw new MemorySqlError("cli", `unknown command "${command}" — expected synth | cq | sim`)
+  }
+}
+
+main(process.argv.slice(2)).catch((error: unknown) => {
+  console.error(explain(error))
+  process.exitCode = 1
+})

@@ -1,7 +1,7 @@
 {
   "name": "memory-sql",
-  "version": "0.1.0",
-  "description": "Ontology-backed SQL memory layer with built-in validation: FHIR-derived ontology over DuckDB, CQ dual-oracle and simulation engines.",
+  "version": "0.2.0",
+  "description": "Ontology-backed SQL memory layer with built-in validation: FHIR-derived ontology over DuckDB, CQ dual-oracle and simulation engines. One runtime dependency; optional Effect adapter under memory-sql/effect.",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -13,6 +13,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./effect": {
+      "types": "./dist/effect.d.ts",
+      "import": "./dist/effect.js"
     }
   },
   "bin": {
@@ -27,11 +31,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@duckdb/node-api": "^1.5.4-r.1",
-    "@effect/cli": "^0.75.2",
-    "@effect/platform": "^0.96.2",
-    "@effect/platform-node": "^0.107.0",
-    "effect": "^3.21.4",
-    "fast-check": "^4.8.0"
+    "@duckdb/node-api": "^1.5.4-r.1"
+  },
+  "peerDependencies": {
+    "effect": "^3.21.4"
+  },
+  "peerDependenciesMeta": {
+    "effect": {
+      "optional": true
+    }
   }
 }

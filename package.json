@@ -12,15 +12,17 @@
   ],
   "scripts": {
     "build": "npm run build -w packages/core",
-    "typecheck": "npm run build -w packages/core && npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run build -w packages/core && npm run typecheck --workspaces --if-present && tsc -p scripts/tsconfig.json --noEmit",
     "test": "npm run build && npm run test -w tests",
     "fetch-fhir": "tsx scripts/fetch-fhir.ts",
     "example:01": "npm run build && tsx examples/src/01-cq-dual-oracle.ts",
     "example:02": "npm run build && tsx examples/src/02-simulation.ts",
-    "example:03": "npm run build && tsx examples/src/03-custom-answer-path.ts"
+    "example:03": "npm run build && tsx examples/src/03-custom-answer-path.ts",
+    "example:04": "npm run build && tsx examples/src/04-effect-adapter.ts"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
+    "effect": "^3.21.4",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3"
   }

@@ -1,9 +1,11 @@
 # memory-sql examples
 
-Three runnable walkthroughs of the product surface. Each script imports **only
-the published `memory-sql` package by name** — never relative paths into
-`packages/core/src` — so they exercise exactly what a downstream consumer gets.
-They run with `tsx` against the **built** core; the root scripts build first.
+Four runnable walkthroughs of the product surface. Each script imports **only
+the published `memory-sql` package by name** (`04` additionally imports
+`memory-sql/effect` — it is the ONLY example allowed to import `effect`, per
+the isolation gate) — never relative paths into `packages/core/src` — so they
+exercise exactly what a downstream consumer gets. They run with `tsx` against
+the **built** core; the root scripts build first.
 
 From the repository root:
 
@@ -11,6 +13,7 @@ From the repository root:
 npm run example:01   # CQ dual-oracle on the clean world
 npm run example:02   # simulation: metamorphic relations + adversarial stress
 npm run example:03   # plug YOUR OWN memory layer in as an AnswerPath
+npm run example:04   # the Effect adapter: memory-sql/effect
 ```
 
 Everything is deterministic: fixed seeds, fixed `REFERENCE_DATE`, no wall
@@ -39,11 +42,11 @@ validation result: two independent implementations, one answer.
 The Stage 2 engines:
 
 - **Metamorphic testing** — properties that need zero gold labels, checked
-  with fast-check over sampled bindings: adding other patients' resources
+  over seeded samples of real bindings: adding other patients' resources
   must not change answers about *this* patient; shrinking a period can only
   shrink a result set; forward and reverse traversal must agree; GraphPath
-  must equal the SQL oracle everywhere. Failures come back with a shrunk
-  counterexample.
+  must equal the SQL oracle everywhere. A failing relation reports the
+  concrete failing case (seeded PRNG, fully reproducible — no shrinking).
 - **Adversarial stress** — each mutator plants one named defect in a copy of
   the clean world (dangling reference, dropped required attribute, illegal
   code, reversed period, orphan EOB, duplicate id, future-dated birth,
@@ -76,6 +79,18 @@ You handed it an `answer(binding)` function; the dual-oracle engine generated
 the questions, computed ground truth in SQL, and told you exactly where — and
 how — your memory layer is wrong. Swap `NotesPath` for your own layer and the
 same report grades it.
+
+## 04 — Effect adapter (`src/04-effect-adapter.ts`)
+
+The optional `memory-sql/effect` subpath for Effect users: the scoped
+`MemorySql` layer (store opened via `Effect.acquireRelease`, closed on scope
+exit), the wrapped API (`generateWorld`, `runCq`, …) with failures surfacing
+as the tagged `MemorySqlError { op, cause }` on the typed error channel, and
+`answerPath` adapting an Effect-based answerer to the plain `AnswerPath`.
+It also demonstrates failure wrapping: loading a type-poisoned world is
+caught as a tagged error, not a defect. The plain core never imports Effect —
+this example (with the adapter and its test) is allowlisted by the isolation
+gate in `tests/src/isolation.test.ts`.
 
 ## Notes
 
