@@ -1,5 +1,5 @@
 /**
- * SPEC v2 mandate #2 — the `memory-sql/effect` adapter.
+ * The `memory-sql/effect` adapter.
  *
  * The adapter is the ONE place Effect exists (see isolation.test.ts). This
  * suite proves the wrapping is faithful in both directions: a successful

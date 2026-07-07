@@ -1,5 +1,5 @@
 /**
- * Example 01 — Stage 1 end to end: the CQ dual oracle on the clean world.
+ * Example 01 — CQ dual oracle on the clean world.
  *
  * One question, two independent answerers: the deterministic SQL oracle
  * (DuckDB over the loaded world — ground truth) and the reference GraphPath

@@ -4,8 +4,8 @@ Stepwise, machine-checkable guides for wiring memory-sql into an existing
 system. Every playbook ends with **acceptance commands and expected output**
 so you can verify your own work. Read `AGENTS.md` (repo root) first — it
 carries the standing rules, including the prime directive: *the harness is
-the judge; never modify the oracle, verdicts, canonicalization, invariants,
-or tests to make your integration pass.*
+the judge; never modify the oracle, verdicts, canonicalization, or tests to
+make your integration pass.*
 
 ## Which playbook?
 
@@ -15,9 +15,8 @@ or tests to make your integration pass.*
 | "Grade answers over OUR data model, not FHIR" (own tables, own DuckDB, own domain) | [02-custom-ontology.md](./02-custom-ontology.md) — then 03 |
 | "Add domain questions / port our eval set into the suite" | [03-add-cq-templates.md](./03-add-cq-templates.md) |
 | "The report says `divergent` / `missing` / `unsupported-citation` — what now?" or "gate CI on this" | [04-interpret-verdicts.md](./04-interpret-verdicts.md) |
-| "Add label-free checks / defect detectors for our domain" (metamorphic relations, mutators, invariants) | [05-extend-simulation.md](./05-extend-simulation.md) |
 
-Typical full adoption order: **02 → 03 → 01 → 04 → 05**. If you keep the
+Typical full adoption order: **02 → 03 → 01 → 04**. If you keep the
 shipped FHIR ontology and templates and only bring your own answer layer,
 **01 → 04** is enough.
 

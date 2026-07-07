@@ -3,12 +3,9 @@
  *
  * Why this validates the generator: the whole validation story rests on the
  * CLEAN world being clean *by construction*. If the generator ever emitted a
- * dangling reference or an out-of-value-set code, the stress engine's
- * "clean = zero violations" baseline (asserted engine-side in stress.test.ts)
- * would be meaningless and every mutator test would be ambiguous. Here we
- * verify determinism and re-derive referential consistency structurally from
- * the ontology metadata — an independent check that does not go through the
- * sim engine.
+ * dangling reference or an out-of-value-set code, the SQL oracle and GraphPath
+ * would be grading different realities. Here we verify determinism and
+ * re-derive referential consistency structurally from the ontology metadata.
  */
 import { describe, expect, it } from "vitest"
 import {
@@ -70,10 +67,8 @@ describe("synth: sizing", () => {
 })
 
 /**
- * Structural clean-world validation: re-implements the core invariants
- * directly from ontology metadata (the closed-world analogue of "zero stress
- * violations" without depending on the sim engine — that engine-level zero
- * is asserted in stress.test.ts).
+ * Structural clean-world validation: checks the generated world directly
+ * against ontology metadata.
  */
 describe("synth: referential consistency of the clean world", () => {
   const world: InstanceWorld = generateWorld(ontology, { seed: 42, patients: 10 })
@@ -139,7 +134,6 @@ describe("synth: referential consistency of the clean world", () => {
   })
 
   it("periods are ordered (start <= end) — plain ISO strings compare exactly", () => {
-    // Pairing rule mirrors the stress engine's period-ordering invariant:
     // `<x>_start`/`<x>_end` pairs come from flattening a FHIR Period and must
     // be ordered. Bare `start`/`end` columns (Appointment, Slot) are two
     // independent FHIR `instant` fields, not a Period — deliberately excluded.

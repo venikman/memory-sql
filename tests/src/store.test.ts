@@ -4,8 +4,8 @@
  * Why this validates the ontology->SQL mapping: the SQL oracle is only ground
  * truth if the DDL is a faithful, deterministic image of the ontology (one
  * table per entity type, one column per attribute/relation, reserved words
- * quoted) and loadWorld round-trips the generated world losslessly. The v2
- * load boundary additionally rejects worlds whose JS value types contradict
+ * quoted) and loadWorld round-trips the generated world losslessly. The load
+ * boundary additionally rejects worlds whose JS value types contradict
  * the ontology BEFORE any DDL/INSERT — without it DuckDB would silently cast
  * on INSERT while the GraphPath reads the raw in-memory row, and the two
  * reference oracles would see different values for the same world. Every

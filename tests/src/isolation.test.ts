@@ -1,5 +1,5 @@
 /**
- * SPEC v2 mandate #2 — the executable Effect isolation gate.
+ * The executable Effect isolation gate.
  *
  * The core's pitch is "plain TypeScript, one runtime dependency; Effect users
  * get an optional adapter". That claim is only credible if it is enforced:

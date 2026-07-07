@@ -2,7 +2,7 @@
  * SPEC testing contract #1 — ontology.
  *
  * Why this validates the ontology: everything downstream (DDL, the SQL oracle,
- * the graph path, mutators) trusts the committed FHIR-derived ontology to be
+ * the graph path) trusts the committed FHIR-derived ontology to be
  * structurally sound. This suite pins (a) the committed top50.json loads and
  * validates (50 entity types / 536 attributes / 261 relations), (b) the
  * payer-critical resources kept the attributes and relations the shipped CQ

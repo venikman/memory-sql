@@ -1,6 +1,6 @@
 /**
- * Stage 1 — the CQ dual oracle. A competency question is a parametrized
- * template answered two independent ways — the SQL oracle (ground truth,
+ * CQ dual oracle. A competency question is a parametrized template answered
+ * two independent ways — the SQL oracle (ground truth,
  * oracle.ts) and a pluggable AnswerPath — then graded with the four-way
  * verdict. This module owns the canonical Answer form + verdict rules, the 13
  * FHIR templates (ALL FHIR knowledge lives here; the engines are
@@ -92,8 +92,7 @@ export const computeVerdict = (oracle: Answer, path: Answer): Verdict => {
   return unsupportedCitations(o, p).length > 0 ? "unsupported-citation" : "match"
 }
 
-// ── Stable answer-value keys (shared with sim.ts, which must grade exactly as
-// strictly as computeVerdict — order-insensitive sets, no type coercion) ─────
+// ── Stable answer-value keys (order-insensitive sets, no type coercion) ──────
 
 /** Recursive key-sorted serialization (a JSON.stringify replacer ARRAY would
  * filter nested keys down to the top-level key set — never use one here). */
@@ -144,7 +143,7 @@ export type CqParams = Readonly<Record<string, ParamValue>>
 /** A template bound to concrete parameter values — the unit both oracles answer. */
 export interface CqBinding { readonly template: CqTemplate; readonly params: CqParams }
 
-/** Copy of a binding with one parameter replaced (metamorphic transforms use this). */
+/** Copy of a binding with one parameter replaced. */
 export const withParam = (binding: CqBinding, name: string, value: ParamValue): CqBinding => ({
   template: binding.template,
   params: { ...binding.params, [name]: value }
@@ -446,8 +445,8 @@ const sampleParam = (spec: ParamSpec, world: InstanceWorld, rng: Rng): ParamValu
       return sampleDate(spec.min ?? DEFAULT_MIN_DATE, spec.max ?? REFERENCE_DATE, rng)
     case "period": {
       // Spans start at 0 (a single-day period) so the suite exercises the
-      // short-period regime too — an answer layer that breaks on narrow
-      // windows must be caught here, not only by sim's temporal narrowing.
+      // short-period regime too, catching answer layers that break on narrow
+      // windows.
       const start = sampleDate(spec.min ?? DEFAULT_MIN_DATE, spec.max ?? DEFAULT_MAX_PERIOD_START, rng)
       return { start, end: formatIsoDate(isoDays(start) + rng.int(0, 720)) }
     }
@@ -490,8 +489,8 @@ export interface AnswerPath {
 }
 
 /** Index an InstanceWorld as a typed graph. Dangling references simply fail to
- * resolve (follow -> undefined) rather than throwing: on mutated stress worlds
- * the graph must stay walkable so the *engines* can observe the corruption. */
+ * resolve (follow -> undefined) rather than throwing, so callers can still
+ * inspect partially invalid fixture worlds. */
 const makeWorldGraph = (world: InstanceWorld, ontology: Ontology): GraphView => {
   const nodesByType = new Map<string, GraphNode[]>()
   const byId = new Map<string, Map<string, GraphNode>>()

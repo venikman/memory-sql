@@ -5,18 +5,13 @@ dependency, plain TypeScript, Effect optional.**
 
 memory-sql derives a typed ontology from the FHIR R4 specification (top 50
 payer-weighted resources), generates deterministic instance worlds into SQL
-(DuckDB), and ships two validation engines that grade *any* memory or
-retrieval layer against deterministic ground truth:
+(DuckDB), and grades *any* memory or retrieval layer against deterministic
+ground truth:
 
-- **Stage 1 — CQ dual-oracle.** Parametrized competency questions are answered
+- **CQ dual-oracle.** Parametrized competency questions are answered
   two ways: by a deterministic **SQL oracle** (ground truth) and by a
   pluggable **`AnswerPath`** (the layer under test). Every answer gets a
   four-way verdict: `match | missing | divergent | unsupported-citation`.
-- **Stage 2 — Simulation.** (a) **Metamorphic testing** — relations that need
-  zero gold labels, checked over seeded samples of real bindings; failures
-  come back with the concrete failing case. (b) **Adversarial instance
-  stress** — mutate clean worlds with named defects, replay SQL invariants,
-  and demand the mutator × invariant matrix comes back exact.
 
 The product pitch: *plug your own answer layer (LLM, RAG, wiki agent, graph
 store) into `AnswerPath`; memory-sql generates the data, owns the ground
@@ -32,16 +27,16 @@ sampling noise in the ground truth. Citations are mechanical too: a template's
 SQL must surface the *supporting rows*, so "does this citation actually back
 the answer?" is a set-membership check, not a judgment call.
 
-## The minimal core (v2)
+## The Minimal Core
 
-*("v2" is the SPEC revision — on npm it is `memory-sql@0.2.x`.)*
+*(On npm this line is currently `memory-sql@0.2.x`.)*
 
 The core is deliberately small and flat:
 
 - **One runtime dependency**: `@duckdb/node-api`. No CLI framework (the CLI is
-  `node:util` `parseArgs`), no property-testing library (sampling runs on the
-  in-repo seeded PRNG), no schema library, no Effect in the core.
-- **Eleven flat source files**, one public entry (`memory-sql`) that
+  `node:util` `parseArgs`), no property-testing library, no schema library,
+  no Effect in the core.
+- **Nine flat source files**, one public entry (`memory-sql`) that
   re-exports everything — no deep import paths.
 - **Plain `async/await`** and one op-tagged `Error` subclass
   (`MemorySqlError { op }`) are the idiom throughout.
@@ -51,10 +46,6 @@ The core is deliberately small and flat:
 
 **What was traded for minimalism** (honest notes):
 
-- The metamorphic runner samples cases with the seeded PRNG and reports the
-  *failing case as sampled* — there is **no shrinking** of counterexamples
-  (fast-check is gone). Failing cases are still fully reproducible from the
-  seed.
 - The CLI has no framework niceties (no auto-generated completions, no nested
   help trees) — `parseArgs` + a usage string.
 
@@ -75,8 +66,8 @@ provides:
   lifecycle via `Effect.acquireRelease` — the store closes when the scope
   closes);
 - `Effect.tryPromise` / `Effect.try` wrappers for the plain API
-  (`openStore`, `loadWorld`, `runCq`, `runMetamorphic`, `runStress`,
-  `loadFhirOntology`, `generateWorld`), signatures inferred from the core so
+  (`openStore`, `loadWorld`, `runCq`, `loadFhirOntology`, `generateWorld`),
+  signatures inferred from the core so
   the two surfaces cannot drift;
 - `answerPath(name, effectFn)` to adapt an Effect-based answerer to the plain
   `AnswerPath` the engines grade.
@@ -86,10 +77,10 @@ the adapter, and the main entry is fully functional with `effect` absent.
 Declare `effect` in your own dependencies if you use `memory-sql/effect`.
 See `examples/src/04-effect-adapter.ts` for the full walkthrough.
 
-### Migration note (v1 → v2): `AnswerPath` returns a `Promise`
+### Migration note: `AnswerPath` returns a `Promise`
 
-In v1, `AnswerPath.answer` returned an Effect. In v2 the plug-in surface is
-plain:
+In older Effect-first builds, `AnswerPath.answer` returned an Effect. The
+plug-in surface is now plain:
 
 ```ts
 interface AnswerPath {
@@ -122,17 +113,11 @@ never a suite crash.
                     │                 │                 │
                     ▼                 ▼                 ▼
              ┌─────────────────────────────────────────────────┐
-             │ STAGE 1 · cq.ts — dual oracle                   │
+             │ cq.ts — dual oracle                             │
              │   oracle.ts SqlOracle (ground truth)            │
              │   vs AnswerPath (GraphPath reference│YOUR layer)│
              │   → CqReport: match/missing/divergent/          │
              │     unsupported-citation, rates, per-regime     │
-             └───────────────────────┬─────────────────────────┘
-                                     │
-             ┌───────────────────────▼─────────────────────────┐
-             │ STAGE 2 · sim.ts + sim-stress.ts — simulation   │
-             │   4 metamorphic relations (seeded sampling)     │
-             │   8 mutators × 9 invariants stress matrix       │
              └─────────────────────────────────────────────────┘
 ```
 
@@ -145,9 +130,8 @@ npm install        # installs all three workspaces
 npm run build      # compiles packages/core → dist/
 npm test           # builds, then runs the vitest suite in tests/
 
-# the four examples (each rebuilds core first)
+# the three examples (each rebuilds core first)
 npm run example:01   # CQ dual-oracle on the clean world → CqReport
-npm run example:02   # metamorphic relations + adversarial stress matrix
 npm run example:03   # plug a custom (deliberately flawed) AnswerPath in
 npm run example:04   # the Effect adapter (memory-sql/effect)
 ```
@@ -183,7 +167,6 @@ try {
 # dev (tsx, from source)
 npx tsx packages/core/src/cli.ts synth --seed 42 --patients 20 --out world.json
 npx tsx packages/core/src/cli.ts cq    --seed 42 --world world.json -n 50
-npx tsx packages/core/src/cli.ts sim   --seed 42 --mrs 200
 
 # built
 node packages/core/dist/cli.js --help
@@ -193,13 +176,11 @@ node packages/core/dist/cli.js --help
 - `cq` runs the dual-oracle suite (GraphPath vs SqlOracle) and prints the
   `CqReport`. `--bindings`/`-n` sets the number of Monte-Carlo sampled
   bindings.
-- `sim` runs metamorphic + stress and prints both reports.
 
 Exit codes are CI-gate semantics: `0` = pass; `1` on any non-`match` verdict,
-a failed relation, a clean world with violations, a mutator that slips past
-every invariant, `0` sampled bindings ("nothing graded is not nothing
-wrong"), a rejected/degenerate world, or any expected failure — always a
-friendly one-line error, never a stack trace.
+`0` sampled bindings ("nothing graded is not nothing wrong"), a
+rejected/degenerate world, or any expected failure — always a friendly
+one-line error, never a stack trace.
 
 ## The FHIR top-50 ontology
 
@@ -219,12 +200,12 @@ friendly one-line error, never a stack trace.
   with `<f>_ref` + `<f>_ref_type` columns); choice elements resolve by a
   fixed preference order; required bindings with ≤ 25 codes become enumerable
   value sets.
-- The ontology model itself is **generic** — the CQ and simulation engines
-  never mention FHIR. All FHIR-specific knowledge lives in the committed
-  data, the shipped templates, and the stress configuration, so the same
-  engines run over any `Ontology` you hand them.
+- The ontology model itself is **generic** — the CQ engine never mentions
+  FHIR. All FHIR-specific knowledge lives in the committed data and shipped
+  templates, so the same memory/SQL validation path runs over any `Ontology`
+  you hand it.
 
-## Stage 1 — CQ dual-oracle
+## CQ dual-oracle
 
 Lineage: **competency questions** — the classic ontology-engineering
 technique (Grüninger & Fox) of specifying what a knowledge system must be
@@ -247,27 +228,6 @@ bindings, and `runCq` grades each pair:
 The `CqReport` carries answerable-rate, agreement-rate,
 citation-resolves-rate, a per-regime breakdown, and per-template binding
 counts.
-
-## Stage 2 — Simulation
-
-- **Metamorphic testing** (lineage: Chen et al. — test without gold labels by
-  checking *relations between* answers). Four shipped relations:
-  irrelevant-augmentation (other patients' data must not change this
-  patient's answers), temporal-narrowing (shrinking a period can only shrink
-  a result set — three-sided, with an oracle-guided bisection probe),
-  referential-symmetry (forward traversal equals reverse lookup),
-  cross-oracle-equality (GraphPath ≡ SqlOracle everywhere). Cases are drawn
-  with the seeded PRNG; a failing relation reports the concrete failing case
-  (no shrinking — see the trade-off note above).
-- **Adversarial instance stress** (lineage: the closed-world analogue of
-  description-logic **ABox consistency checking** — instead of asking a
-  reasoner whether assertions are consistent, plant a defect and demand a SQL
-  invariant convicts it). Eight mutators (dangling-reference,
-  missing-required, illegal-code, reversed-period, orphan-eob, duplicate-id,
-  future-dated-birth, self-reference) × nine invariants. The contract: the
-  clean world produces **zero** violations, and every mutator trips exactly
-  its named invariant — printed as a matrix. This is "validation by
-  simulation".
 
 World loading is guarded at the boundary: `loadWorld` type-checks every value
 against the ontology's column types and rejects a mistyped world with a
@@ -334,12 +294,11 @@ Tests test the public API; the examples exercise exactly what a downstream
 consumer gets.
 
 ```
-packages/core/src/  eleven flat files: ontology · rng · store · synth · oracle
-                    · cq · sim · sim-stress · cli · index · effect (the ONLY
+packages/core/src/  nine flat files: ontology · rng · store · synth · oracle
+                    · cq · cli · index · effect (the ONLY
                     effect file)
-examples/           01 dual-oracle · 02 simulation · 03 custom AnswerPath
-                    · 04 effect adapter
-tests/              vitest suite over the public API (9 files, incl. the
+examples/           01 dual-oracle · 03 custom AnswerPath · 04 effect adapter
+tests/              vitest suite over the public API (7 files, incl. the
                     Effect isolation gate and the adapter test)
 scripts/            fetch-fhir.ts (one-time ontology derivation, plain TS)
 ```

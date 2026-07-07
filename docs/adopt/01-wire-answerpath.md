@@ -12,7 +12,7 @@ only sees `answer(binding): Promise<Answer>`.
   - from a local checkout: run `npm run build` in the memory-sql repo first,
     then depend on `file:<path>/memory-sql/packages/core` (this is what
     `wiki-index/harness/package.json` does), or
-  - from npm: `npm install memory-sql` (v2 is `memory-sql@0.2.x`).
+  - from npm: `npm install memory-sql` (current package line: `memory-sql@0.2.x`).
 - Read `AGENTS.md` first. In particular: if the oracle flags your layer, your
   layer is wrong — do not touch the oracle.
 

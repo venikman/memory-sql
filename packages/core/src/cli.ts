@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 /**
- * memory-sql CLI — node:util parseArgs, plain async main (SPEC v2).
- * `synth` writes a deterministic clean world; `cq` runs the Stage 1
- * dual-oracle suite (GraphPath vs the SQL oracle); `sim` runs Stage 2
- * (metamorphic relations + adversarial stress). CI-gate semantics, unchanged
- * from v1: exit 0 = pass; exit 1 on any divergence or violation, on 0 sampled
- * bindings ("nothing graded is not nothing wrong"), on a rejected/degenerate
- * world, and on any expected failure — always a friendly one-line error,
- * never a stack trace. Determinism: everything flows from --seed; no wall
- * clock anywhere.
+ * memory-sql CLI — node:util parseArgs, plain async main.
+ * `synth` writes a deterministic clean world; `cq` runs the dual-oracle suite
+ * (GraphPath vs the SQL oracle). CI-gate semantics:
+ * exit 0 = pass; exit 1 on any divergence, on 0 sampled bindings
+ * ("nothing graded is not nothing wrong"), on a rejected/degenerate world,
+ * and on any expected failure — always a friendly one-line error, never a
+ * stack trace. Determinism: everything flows from --seed; no wall clock
+ * anywhere.
  */
 import { readFile, writeFile } from "node:fs/promises"
 import { parseArgs } from "node:util"
@@ -17,17 +16,13 @@ import {
   bindTemplates,
   fhirCqTemplates,
   formatCqReport,
-  formatMetamorphicReport,
-  formatStressReport,
   generateWorld,
   loadFhirOntology,
   makeGraphPath,
   makeRng,
   MemorySqlError,
   openStore,
-  runCq,
-  runMetamorphic,
-  runStress
+  runCq
 } from "./index.js"
 
 const USAGE = `memory-sql — ontology-backed SQL memory layer with built-in validation (FHIR R4 top-50 over DuckDB)
@@ -35,7 +30,6 @@ const USAGE = `memory-sql — ontology-backed SQL memory layer with built-in val
 Usage:
   memory-sql synth [--seed N] [--patients N] [--out FILE]    generate a deterministic, referentially consistent world
   memory-sql cq    [--seed N] [--world FILE] [--bindings N]  run the CQ dual-oracle suite (exit 1 on any divergence)
-  memory-sql sim   [--seed N] [--mrs N]                      run metamorphic + stress engines (exit 1 on violations)
 
 Flags:
   -s, --seed N      PRNG seed — same seed, same world, same report (default 42)
@@ -43,19 +37,15 @@ Flags:
   -o, --out FILE    output path for the generated InstanceWorld JSON (default world.json)
       --world FILE  InstanceWorld JSON to grade against (default: generate from --seed)
   -n, --bindings N  number of Monte-Carlo sampled bindings (default 50)
-      --mrs N       property runs per metamorphic relation (default 200)
 
-Exit codes: 0 = pass; 1 = divergences/violations, an empty suite, or any expected failure.`
+Exit codes: 0 = pass; 1 = divergences, an empty suite, or any expected failure.`
 
 const DEFAULT_SEED = 42
 const DEFAULT_PATIENTS = 20
 const DEFAULT_BINDINGS = 50
-const DEFAULT_MRS = 200
-/** Bindings the metamorphic properties draw from (the runner picks indices). */
-const SIM_BINDING_COUNT = 50
 const MAX_FINDINGS_SHOWN = 10
 
-// ── Flag parsing (node:util parseArgs — no CLI framework per SPEC v2) ────────
+// ── Flag parsing (node:util parseArgs — no CLI framework) ────────────────────
 
 type FlagSpec = Readonly<Record<string, { readonly type: "string"; readonly short?: string }>>
 
@@ -153,7 +143,7 @@ const synthCommand = async (args: readonly string[]): Promise<void> => {
   console.log(`synth: ${rows} rows across ${lists.length} entity types (seed ${seed}, ${patients} patients) -> ${out}`)
 }
 
-// ── cq — Stage 1: dual-oracle suite, GraphPath vs the SQL oracle ─────────────
+// ── cq — dual-oracle suite, GraphPath vs the SQL oracle ──────────────────────
 
 const cqCommand = async (args: readonly string[]): Promise<void> => {
   const flags = parsedFlags(args, {
@@ -208,48 +198,6 @@ const cqCommand = async (args: readonly string[]): Promise<void> => {
   failRun(`cq: FAIL — ${findings.length} of ${report.total} bindings did not match`)
 }
 
-// ── sim — Stage 2: metamorphic relations + adversarial stress ────────────────
-
-const simCommand = async (args: readonly string[]): Promise<void> => {
-  const flags = parsedFlags(args, {
-    seed: { type: "string", short: "s" },
-    mrs: { type: "string" }
-  })
-  const seed = intFlag("seed", flags.seed, DEFAULT_SEED)
-  const mrs = intFlag("mrs", flags.mrs, DEFAULT_MRS)
-
-  const ontology = loadFhirOntology()
-  const world = generateWorld(ontology, { seed })
-
-  // (a) metamorphic: label-free relations over sampled bindings, the GraphPath
-  // as the answer layer under test. Fresh store per engine run — hermetic.
-  const store = await openStore()
-  let metamorphic: Awaited<ReturnType<typeof runMetamorphic>>
-  try {
-    metamorphic = await runMetamorphic(store, world, {
-      ontology,
-      bindings: bindTemplates(fhirCqTemplates, world, makeRng(seed), SIM_BINDING_COUNT),
-      makePath: (w: InstanceWorld) => makeGraphPath(w, ontology),
-      seed,
-      runsPerRelation: mrs
-    })
-  } finally {
-    store.close()
-  }
-  console.log(formatMetamorphicReport(metamorphic))
-
-  // (b) stress: mutator x invariant matrix — the clean world must be silent,
-  // every planted defect must be caught (runStress opens its own store).
-  const stress = await runStress(ontology, { seed, world })
-  console.log(formatStressReport(stress))
-
-  if (metamorphic.passed && stress.passed) {
-    console.log("sim: PASS — relations hold, clean world is silent, every mutator was caught")
-  } else {
-    failRun("sim: FAIL — see the reports above")
-  }
-}
-
 // ── dispatch + run ───────────────────────────────────────────────────────────
 
 const main = async (argv: readonly string[]): Promise<void> => {
@@ -268,10 +216,8 @@ const main = async (argv: readonly string[]): Promise<void> => {
       return synthCommand(rest)
     case "cq":
       return cqCommand(rest)
-    case "sim":
-      return simCommand(rest)
     default:
-      throw new MemorySqlError("cli", `unknown command "${command}" — expected synth | cq | sim`)
+      throw new MemorySqlError("cli", `unknown command "${command}" — expected synth | cq`)
   }
 }
 

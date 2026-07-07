@@ -8,7 +8,7 @@
  * temporal SQL is exact. FHIR legitimately produces reserved-word identifiers
  * (table `group`, columns `start`/`end`), so ALL generated identifiers are
  * quoted. loadWorld validates world keys AND value JS types against the
- * ontology BEFORE any DDL/INSERT (v1 soundness fix): otherwise DuckDB would
+ * ontology BEFORE any DDL/INSERT: otherwise DuckDB would
  * silently cast on INSERT (string "2500" into INTEGER) while the GraphPath
  * reads the raw in-memory row — the two reference oracles would see different
  * values for the same world. Poisoned worlds are rejected at the boundary
@@ -148,12 +148,11 @@ export const openStore = async (opts?: StoreOptions): Promise<Store> => {
 /** One instance row; keys are SQL column names, values the store scalar domain. */
 export type Row = Readonly<Record<string, SqlValue>>
 
-/** Entity type name -> rows. The unit of generation, mutation, and loading. */
+/** Entity type name -> rows. The unit of generation and loading. */
 export interface InstanceWorld { readonly [entityType: string]: ReadonlyArray<Row> }
 
 /** Render a SqlValue as a SQL literal. Strings are single-quoted with quote
- * doubling; non-finite numbers degrade to NULL (the clean generator never
- * produces them; mutated worlds must still load so invariants can fire). */
+ * doubling; non-finite numbers degrade to NULL. */
 export const sqlLiteral = (value: SqlValue): string => {
   if (value === null) return "NULL"
   if (typeof value === "boolean") return value ? "TRUE" : "FALSE"
@@ -214,8 +213,8 @@ const inferColumns = (rows: ReadonlyArray<Row>): ColumnDef[] => {
 
 /**
  * Create tables and insert every row of the world. Idempotent per table
- * (DROP TABLE IF EXISTS + CREATE) so stress replays can reload mutated worlds
- * into the same store; `id TEXT PRIMARY KEY` is a real constraint — a world
+ * (DROP TABLE IF EXISTS + CREATE) so tests and callers can reload replacement
+ * worlds into the same store; `id TEXT PRIMARY KEY` is a real constraint — a world
  * carrying duplicate ids fails the INSERT. With an `ontology` the DDL covers
  * ALL entity types (even empty tables exist — negative-control CQs query
  * them) and world keys AND value JS types are validated first (no silent

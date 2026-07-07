@@ -53,9 +53,9 @@ result set must surface the **supporting rows**, so citations are auditable:
   (`"2026-01-01"`) is "today" — never the wall clock.
 - Scalar templates select each contributing row exactly once.
 - Always build literals with `sqlLiteral(…)` (exported) — never hand-quote.
-- `graph` plans: only needed if you run the reference `makeGraphPath` or the
-  shipped metamorphic relations over your templates. The harness grades
-  external paths only, so its stubs throw with a pointed message
+- `graph` plans: only needed if you run the reference `makeGraphPath` over
+  your templates. The harness grades external paths only, so its stubs throw
+  with a pointed message
   (`noGraphPlan` in `wiki-index/harness/src/templates.ts`) — acceptable, but
   then never hand those templates to `makeGraphPath`.
 

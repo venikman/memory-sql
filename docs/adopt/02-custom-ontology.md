@@ -1,10 +1,9 @@
 # 02 — Replace the FHIR ontology with your own schema
 
-Goal: memory-sql's engines (store, oracle, CQ runner, simulation) run over
-YOUR domain model. The engines are ontology-generic — all FHIR knowledge
-lives in the committed data, the shipped templates, and the stress
-configuration. You supply an `Ontology` object and an `InstanceWorld`; nothing
-in the core needs changing.
+Goal: memory-sql's store, oracle, and CQ runner operate over YOUR domain
+model. The validation path is ontology-generic — all FHIR knowledge lives in
+the committed data and shipped templates. You supply an `Ontology` object and
+an `InstanceWorld`; nothing in the core needs changing.
 
 Worked case study throughout: `wiki-index/harness/` derived a 14-entity
 ontology from a real, pre-existing DuckDB (`data/fhir.duckdb`) and loads it
@@ -70,7 +69,7 @@ column derivation:
    negative-control SQL can query them. With `ontology === undefined`,
    columns are inferred from rows (test fixtures only — do not ship that).
 4. Loading is idempotent per table (`DROP TABLE IF EXISTS` + `CREATE`), so
-   the same store can be reloaded with mutated worlds.
+   the same store can be reloaded with a corrected or regenerated world.
 
 Consequence: when your source DB hands you driver types (JS `Date`, `bigint`),
 you must coerce them to the promised JS type before `loadWorld`.

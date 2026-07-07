@@ -6,13 +6,12 @@ memory-sql is an ontology-backed SQL memory layer with built-in validation.
 It derives a typed ontology (shipped: FHIR R4 top-50 resources,
 `packages/core/fhir-data/top50.json`), generates deterministic instance worlds
 into DuckDB, and grades *any* answer/memory/retrieval layer against a
-deterministic **SQL oracle**: Stage 1 runs parametrized competency questions
+deterministic **SQL oracle**: the CQ runner executes parametrized competency questions
 through both the oracle and a pluggable `AnswerPath` and issues a four-way
-verdict per question; Stage 2 runs metamorphic relations (no gold labels) and
-an adversarial mutator × invariant stress matrix. Same seed → same world →
-same report, byte-for-byte. No LLM judge anywhere.
+verdict per question. Same seed → same world → same report, byte-for-byte.
+No LLM judge anywhere.
 
-The core is deliberately minimal: eleven flat files in `packages/core/src`,
+The core is deliberately minimal: nine flat files in `packages/core/src`,
 one runtime dependency (`@duckdb/node-api`), plain `async/await`, one error
 class (`MemorySqlError { op }`), one public entry (`memory-sql`). Effect is an
 optional adapter behind `memory-sql/effect`. Workspaces: `packages/core` is
@@ -24,9 +23,9 @@ the product; `examples/` and `tests/` consume it by package name only.
 npm install          # all three workspaces
 npm run build        # tsc: packages/core/src -> dist/ (examples/tests import dist)
 npm test             # builds, then runs the vitest suite in tests/
-                     # expected tail: "Test Files  9 passed (9)" — always run via
+                     # expected tail: "Test Files  7 passed (7)" — always run via
                      # npm test; bare `npx vitest run` from the repo root misses
-                     # tests/vitest.config.ts (120s testTimeout) and times out
+                     # tests/vitest.config.ts (120s testTimeout) and can time out
 npm run typecheck    # tsc --noEmit across workspaces + scripts/
 ```
 
@@ -38,15 +37,12 @@ node packages/core/dist/cli.js synth --seed 42 --patients 20 --out world.json
 node packages/core/dist/cli.js cq --seed 42 --bindings 40
 # …report…
 # cq: PASS — the two oracles agree on every binding        (exit 0)
-node packages/core/dist/cli.js sim --seed 42 --mrs 100
-# …4x "PASS <relation>" + mutator x invariant matrix…
-# sim: PASS — relations hold, clean world is silent, every mutator was caught
 ```
 
 Exit codes are CI-gate semantics: `0` = pass; `1` on any non-`match` verdict,
-a failed relation, a dirty clean world, an uncaught mutator, **0 sampled
-bindings** ("nothing graded is not nothing wrong"), a rejected/degenerate
-world, or any expected failure — always a one-line error, never a stack trace.
+**0 sampled bindings** ("nothing graded is not nothing wrong"), a
+rejected/degenerate world, or any expected failure — always a one-line error,
+never a stack trace.
 
 ## The four-way verdict
 
@@ -64,16 +60,16 @@ canonicalization in `oracle.ts` (`answerFromSupport`, `canonicalCitations`).
 
 **An agent must NEVER modify oracle SQL, verdict logic (`computeVerdict`,
 `answerValuesEqual`, `isEmptyAnswer`), canonicalization (`canonicalizeAnswer`,
-`answerFromSupport`, `canonicalCitations`, `stableKey`), invariants, mutators,
-or tests to make its own integration pass.**
+`answerFromSupport`, `canonicalCitations`, `stableKey`), or tests to make its
+own integration pass.**
 
 - If the harness flags your layer (`divergent`, `missing`,
-  `unsupported-citation`, a failed relation, a silent invariant), **your layer
-  is wrong**. Fix the layer, not the referee.
+  `unsupported-citation`), **your layer is wrong**. Fix the layer, not the
+  referee.
 - Template SQL *is* the ground truth. If a question's ground truth cannot be
   reproduced honestly by SQL, mark the template skipped with a reason — never
   bend the SQL toward an expected answer (see `docs/adopt/03-add-cq-templates.md`).
-- If you genuinely believe the oracle, a verdict rule, or an invariant is
+- If you genuinely believe the oracle or a verdict rule is
   wrong: **STOP and report** the exact template id / rule, the binding, both
   answers, and why you think ground truth is off. Do not patch it. Do not
   weaken a test. A green suite obtained by editing the judge is worthless and
@@ -111,7 +107,6 @@ Task-specific step-by-step guides with acceptance commands live in
 2. `02-custom-ontology.md` — replace the FHIR ontology with your own schema
 3. `03-add-cq-templates.md` — add domain competency questions
 4. `04-interpret-verdicts.md` — read reports, gate CI
-5. `05-extend-simulation.md` — add metamorphic relations / mutators / invariants
 
 A completed real-world adoption (custom ontology from a live DuckDB, 14 CQ
 templates, two AnswerPaths) lives at `wiki-index/harness/` and is quoted

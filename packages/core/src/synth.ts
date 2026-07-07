@@ -1,18 +1,17 @@
 /**
- * Deterministic InstanceWorld generator — the CLEAN baseline every validation
- * engine measures against. Referential consistency is guaranteed BY
- * CONSTRUCTION: all rows are created first (pass 1), then relations are wired
- * (pass 2), so every `<relation>_ref` points at an existing id even across
- * FHIR's reference cycles. Required attributes are always filled; value-set
- * attributes draw from their value set; `<x>_start` <= `<x>_end`; birth dates
- * precede REFERENCE_DATE; rows never self-reference. Clinical resources are
+ * Deterministic InstanceWorld generator — the clean baseline the CQ oracle
+ * grades against. Referential consistency is guaranteed BY CONSTRUCTION: all
+ * rows are created first (pass 1), then relations are wired (pass 2), so every
+ * `<relation>_ref` points at an existing id even across FHIR's reference
+ * cycles. Required attributes are always filled; value-set attributes draw
+ * from their value set; `<x>_start` <= `<x>_end`; birth dates precede
+ * REFERENCE_DATE; rows never self-reference. Clinical resources are
  * patient-scoped (Patient-targeting relations bind to the owning patient,
  * patient-scoped targets come from the same patient's rows) and ClaimResponse/
  * ExplanationOfBenefit/CoverageEligibilityResponse pair 1:1 with what they
- * answer. Adversarial corruption lives in sim.ts — cleanliness here is itself
- * a tested contract. Deterministic: same (ontology, seed, patients) =>
- * deep-equal worlds. Generic over the Ontology; the FHIR parts are pure
- * sizing/pairing configuration keyed by entity names.
+ * answer. Deterministic: same (ontology, seed, patients) => deep-equal worlds.
+ * Generic over the Ontology; the FHIR parts are pure sizing/pairing
+ * configuration keyed by entity names.
  */
 import type { Attribute, EntityType, Ontology } from "./ontology.js"
 import { getEntityType, MemorySqlError } from "./ontology.js"
@@ -280,7 +279,7 @@ export const generateWorld = (ontology: Ontology, opts: GenerateOptions): Instan
         const pool = ownerPool !== undefined && ownerPool.length > 0 ? ownerPool : (idPool.get(targetType) as string[])
         let chosen: string | null = rng.pick(pool)
         if (chosen === rowId) {
-          // self-reference guard: clean worlds never self-link (stress plants those)
+          // self-reference guard: clean worlds never self-link
           chosen =
             pool.find((x) => x !== rowId) ??
             (idPool.get(targetType) as string[]).find((x) => x !== rowId) ??

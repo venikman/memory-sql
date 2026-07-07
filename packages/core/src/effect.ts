@@ -9,9 +9,9 @@
  *   - `MemorySql`: a `Context.Tag` service over one open Store, provided by
  *     the scoped `layer(opts)` (store lifecycle via `Effect.acquireRelease`);
  *   - `Effect.tryPromise` wrappers for the async API (openStore/loadWorld,
- *     runCq, runMetamorphic/runStress) and `Effect.try` wrappers for the sync
- *     API (loadFhirOntology, generateWorld), signature-inferred from the core
- *     so the two surfaces cannot drift.
+ *     runCq) and `Effect.try` wrappers for the sync API (loadFhirOntology,
+ *     generateWorld), signature-inferred from the core so the two surfaces
+ *     cannot drift.
  *
  * `effect` is an optional peer dependency: importing "memory-sql" alone never
  * loads this file, and the plain core never imports Effect.
@@ -54,12 +54,8 @@ export const loadFhirOntology = liftSync("fhir", core.loadFhirOntology)
 export const generateWorld = liftSync("synth", core.generateWorld)
 export const loadWorld = liftAsync("loadWorld", core.loadWorld)
 export const runCq = liftAsync("cq", core.runCq)
-export const runMetamorphic = liftAsync("sim", core.runMetamorphic)
-export const runStress = liftAsync("sim", core.runStress)
 
 type StoreOptions = Parameters<typeof core.openStore>[0]
-type SimOptions = Parameters<typeof core.runMetamorphic>[2]
-type SimReport = Awaited<ReturnType<typeof core.runMetamorphic>>
 
 /** Open a Store as a scoped resource: closing is guaranteed on scope exit. */
 export const openStore = (opts?: StoreOptions): Effect.Effect<core.Store, MemorySqlError, Scope.Scope> =>
@@ -87,10 +83,6 @@ export interface MemorySqlService {
     path: core.AnswerPath,
     opts?: core.RunCqOptions
   ) => Effect.Effect<core.CqReport, MemorySqlError>
-  readonly runMetamorphic: (
-    world: core.InstanceWorld,
-    opts: SimOptions
-  ) => Effect.Effect<SimReport, MemorySqlError>
 }
 
 export class MemorySql extends Context.Tag("memory-sql/MemorySql")<MemorySql, MemorySqlService>() {}
@@ -102,9 +94,7 @@ const makeService = (store: core.Store): MemorySqlService => ({
   loadWorld: (ontology, world) =>
     Effect.tryPromise({ try: () => core.loadWorld(store, ontology, world), catch: toError("loadWorld") }),
   runCq: (world, bindings, path, opts) =>
-    Effect.tryPromise({ try: () => core.runCq(store, world, bindings, path, opts), catch: toError("cq") }),
-  runMetamorphic: (world, opts) =>
-    Effect.tryPromise({ try: () => core.runMetamorphic(store, world, opts), catch: toError("sim") })
+    Effect.tryPromise({ try: () => core.runCq(store, world, bindings, path, opts), catch: toError("cq") })
 })
 
 /**

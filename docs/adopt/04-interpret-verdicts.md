@@ -119,12 +119,11 @@ Two protections exist; know both:
 ## 4. Exit-code gating recipe
 
 The CLI already carries gate semantics (`0` pass; `1` on any non-match
-verdict, failed relation, dirty clean world, uncaught mutator, 0 bindings,
-rejected world, expected failure). For the shipped FHIR suite:
+verdict, 0 bindings, rejected world, or expected failure). For the shipped
+FHIR suite:
 
 ```sh
-node packages/core/dist/cli.js cq  --seed 42 --bindings 50   # Stage 1 gate
-node packages/core/dist/cli.js sim --seed 42 --mrs 200       # Stage 2 gate
+node packages/core/dist/cli.js cq --seed 42 --bindings 50
 ```
 
 For a custom runner, gate exactly like `wiki-index/harness/src/run.ts`:

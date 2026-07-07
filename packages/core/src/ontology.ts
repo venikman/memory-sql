@@ -5,7 +5,7 @@
  * one column, one relation = one foreign-key column. The FHIR flattening
  * rules live in scripts/fetch-fhir.ts; the committed output is
  * fhir-data/top50.json. Also home of MemorySqlError, the ONE error class of
- * the package (SPEC v2) — every core failure throws it, tagged with `op`.
+ * the package — every core failure throws it, tagged with `op`.
  */
 import { readFileSync } from "node:fs"
 

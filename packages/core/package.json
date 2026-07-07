@@ -1,7 +1,7 @@
 {
   "name": "memory-sql",
   "version": "0.2.0",
-  "description": "Ontology-backed SQL memory layer with built-in validation: FHIR-derived ontology over DuckDB, CQ dual-oracle and simulation engines. One runtime dependency; optional Effect adapter under memory-sql/effect.",
+  "description": "Ontology-backed SQL memory layer with built-in CQ dual-oracle validation over DuckDB. One runtime dependency; optional Effect adapter under memory-sql/effect.",
   "license": "MIT",
   "type": "module",
   "engines": {

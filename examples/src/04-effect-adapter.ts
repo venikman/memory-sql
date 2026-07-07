@@ -41,7 +41,7 @@ const program = Effect.gen(function* () {
   // The service owns the store; no manual open/close anywhere in user code.
   const sql = yield* MemorySql
 
-  // Stage 1 through the adapter: grade the reference GraphPath as usual
+  // CQ validation through the adapter: grade the reference GraphPath as usual
   // (runCq loads the world into the store; { ontology } = exact DDL).
   const bindings = bindTemplates(fhirCqTemplates, world, makeRng(SEED), SUITE_SIZE)
   const report = yield* sql.runCq(world, bindings, makeGraphPath(world, ontology), { ontology })
